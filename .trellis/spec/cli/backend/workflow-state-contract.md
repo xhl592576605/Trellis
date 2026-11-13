@@ -8,23 +8,9 @@
 
 ## Overview
 
-The breadcrumb is the **only** per-turn channel that fires while a Trellis task
-is active. It is intended for the main AI session, while sub-agent context
-normally arrives through `inject-subagent-context` on class-1 platforms or a
-pull-based prelude on class-2 platforms. Host behavior can still surface the
-breadcrumb inside sub-agent turns, though, and hooks do not currently expose a
-stable main-vs-sub-agent identity signal. Therefore: **every `[required · once]`
-step that the workflow-walkthrough mandates for a given phase must also be
-mentioned in that phase's breadcrumb tag block, and breadcrumb text must be
-safe when read by a sub-agent.** If required gates are absent, the AI in the
-main session will silently skip them. Prior bugs around planning gates and
-Phase 3.4 commit reminders hit exactly this failure mode.
+The default Plan / Execute / Finish workflow runs in the current agent on every platform. Task lifecycle, planning review, specs, quality checks, and journals remain in place. Breadcrumbs orient that agent; workflow steps and skills load task/spec context directly.
 
-This document is the source of truth for the runtime mechanics. The user-facing
-breadcrumb body lives in `.trellis/workflow.md`; this spec covers everything
-**around** it (parsers, writers, lifecycle, reachability).
-
----
+Every required step must remain represented in its phase breadcrumb.
 
 ## Marker syntax
 
@@ -78,9 +64,7 @@ Both regexes MUST use the `\1` backreference variant — `[workflow-state:([A-Za
    task directory name in the breadcrumb header.
 5. It opens `.trellis/workflow.md` and parses every `[workflow-state:STATUS]`
    block.
-6. Codex may map `planning` / `in_progress` to `planning-inline` /
-   `in_progress-inline` based on `codex.dispatch_mode`; all other platforms
-   use the plain status.
+6. Every platform uses the plain status. Legacy Codex dispatch settings do not select a separate breadcrumb or execution mode.
 7. It looks up the current status in the parsed map. If found → emits the
    block body in `<workflow-state>...</workflow-state>`. If not found →
    emits the generic line `Refer to workflow.md for current step.`
@@ -243,8 +227,7 @@ arbitrary prose outside tag blocks during automatic updates.
 
 Regression invariant: an older hash-tracked workflow containing stale Codex
 markers (`[Codex]` plus `[Kilo, Antigravity, Windsurf]`) must be replaced by
-the current packaged template so `--platform codex` can resolve to
-`codex-inline` or `codex-sub-agent` and still load Phase 2.1 detail.
+the current packaged template so every `--platform` loads the same current-agent Phase 2.1 instructions.
 
 ---
 
@@ -297,8 +280,8 @@ Which breadcrumbs actually fire in normal flow:
 |--------|--------------|-------|
 | `no_task` | ✅ reachable | Pseudo-status; emitted when `resolve_active_task()` returns no pointer. |
 | `task_error` | ✅ reachable | Pseudo-status; emitted when a session task pointer resolves to a directory whose `task.json` cannot be read or has no usable `status`. |
-| `planning` | ✅ reachable | After `cmd_create` (which now auto-sets the session pointer when available) and before `cmd_start`. `planning-inline` is the Codex inline-mode breadcrumb body for the same task status. |
-| `in_progress` | ✅ reachable | After `cmd_start`, until `cmd_archive`. `in_progress-inline` is the Codex inline-mode breadcrumb body for the same task status. |
+| `planning` | ✅ reachable | After `cmd_create` (which now auto-sets the session pointer when available) and before `cmd_start`. |
+| `in_progress` | ✅ reachable | After `cmd_start`, until `cmd_archive`. |
 | `completed` | ❌ DEAD in normal flow | `cmd_archive` writes `status="completed"` and immediately moves the task dir to `archive/`. The session-pointer cleanup in `clear_task_from_sessions` runs before the move, so the resolver loses the pointer in the same call. The block body in workflow.md is preserved for a future status-transition redesign (e.g. an explicit `in_progress → completed` command) but no current code path produces it. |
 | `stale_<source_type>` | ✅ reachable (rare) | Synthesized when the session pointer references a deleted task directory. Emits the generic body via `build_breadcrumb` because no `stale_*` tag is shipped. |
 
@@ -331,33 +314,15 @@ Forks can define custom statuses. To do so:
 
 ## Hook reachability matrix
 
-The breadcrumb is **intended** for the main AI session. Sub-agents have their
-own context loading paths, but host platforms may still run per-turn breadcrumb
-hooks for child turns or inherit main-session per-turn context. Trellis must not
-rely on categorical breadcrumb invisibility inside sub-agents.
+| Channel | Current agent |
+| --- | --- |
+| Session-start overview | Startup orientation and task status |
+| Workflow-state hook/plugin/extension | Per-turn status block from project workflow |
+| Shell session bridge | `TRELLIS_CONTEXT_ID` for task.py shell children |
+| `trellis-before-dev` | Direct task, research, and spec reads |
+| `trellis-check` | Direct full-scope review and validation |
 
-| Channel | Main session | Hook-inject sub-agent | Pull-prelude sub-agent | Extension-backed sub-agent |
-|---------|:------------:|:---------------------:|:----------------------:|:--------------------------:|
-| `<workflow-state>` per-turn breadcrumb | ✅ | ⚠️ possible host-dependent exposure | ⚠️ possible host-dependent exposure | ⚠️ possible host-dependent exposure |
-| `inject-subagent-context` (`implement.jsonl`/`check.jsonl` + task artifact injection) | ❌ | ✅ | ❌ | ❌ |
-| Pull-based prelude (`shared.ts:buildPullBasedPrelude`) | N/A | N/A | ✅ | fallback |
-
-Hook-inject platforms: claude, cursor, codebuddy, droid, kiro (`agentSpawn`), opencode (JS plugin).
-Pull-prelude platforms: codex, gemini, qoder, copilot.
-Extension-backed platforms: pi.
-Hookless: kilo, antigravity, devin.
-
-**Implication**: sub-agent-required guidance must still be propagated through
-`inject-subagent-context` for hook-inject platforms, `buildPullBasedPrelude` for
-pull-prelude platforms, or the Pi extension's prompt builder for
-extension-backed platforms. All paths must use the same task artifact order:
-jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if
-present`. Breadcrumb text must additionally be safe if a sub-agent sees it:
-main-session dispatch guidance must self-exempt `trellis-implement` /
-`trellis-check` readers so they implement or check directly instead of spawning
-nested Trellis sub-agents.
-
----
+Default platform maps contain no workflow role definitions, dispatch tool, subagent hook, or pull prelude. Independent `trellis channel` worker APIs retain their separate contracts.
 
 ## DO
 
@@ -385,9 +350,7 @@ nested Trellis sub-agents.
 - Don't silently re-route a writer to a different status without auditing
   every breadcrumb consumer (`session-start.py`, `inject-workflow-state.py`,
   `task.py list`, etc.).
-- Don't rely on sub-agents not seeing the breadcrumb. If guidance is sub-agent
-  relevant, propagate it via the appropriate channel above and keep the
-  breadcrumb wording self-exempting.
+- Do not add role-specific dispatch requirements to the default workflow or its entry skills.
 
 ---
 
@@ -407,3 +370,40 @@ nested Trellis sub-agents.
 Cross-reference: `cli/backend/quality-guidelines.md` "Routing Fixes: Audit
 ALL Entry Paths" — that audit pattern is what this contract enforces for
 the breadcrumb subsystem.
+
+## Current-Agent Execution Contract
+
+### 1. Scope / Trigger
+
+Default workflow rendering, task creation/start, platform init/update, and session context delivery.
+
+### 2. Signatures
+
+`task.py create`, `start`, `current`, `finish`, `archive`, and hierarchy commands remain. Step 1.3 prepares current-session context. Step 2.1 loads `trellis-before-dev`; step 2.2 loads `trellis-check`.
+
+### 3. Contracts
+
+New tasks contain PRD/task metadata without implementation/check JSONL manifests. Existing manifests are preserved as legacy user material and do not gate task start. Hooks preserve session isolation and shell identity; all platforms select the plain workflow status.
+
+### 4. Validation & Error Matrix
+
+| Input | Result |
+| --- | --- |
+| New task without manifests | Normal planning/start lifecycle |
+| Existing empty manifests | Start succeeds without bypass flags |
+| Unsupported step | Existing explicit phase lookup error |
+| Missing/invalid task record | Existing task_error behavior |
+| Unmodified retired workflow role file | Hash-allowlisted safe deletion on update |
+| Customized retired role file | Preserve it; no default dispatch references it |
+
+### 5. Good / Base / Bad Cases
+
+Good: current agent reads task/spec materials and verifies the full diff. Base: lightweight task remains PRD-only. Bad: a platform entry recreates a dispatch requirement or requires JSONL curation before start.
+
+### 6. Tests Required
+
+`test/current-agent-workflow.integration.test.ts` checks all platform maps, direct step rendering, and lifecycle/hierarchy without manifests. Extension tests cover shell identity, stable startup context, project switches, and bounded task artifacts. Update tests cover pristine/customized retirement.
+
+### 7. Wrong vs Correct
+
+Wrong: dispatch an implement role and require a handoff manifest. Correct: current agent loads `trellis-before-dev`, implements, then executes `trellis-check` and validation.

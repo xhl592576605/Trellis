@@ -16,7 +16,6 @@ import {
 } from "../../src/utils/file-writer.js";
 import { initializeHashes } from "../../src/utils/template-hash.js";
 import {
-  getAllAgents as getAllCodexAgents,
   getConfigTemplate as getCodexConfigTemplate,
   getHooksConfig as getCodexHooksConfig,
 } from "../../src/templates/codex/index.js";
@@ -24,7 +23,7 @@ import {
   getAllHooks as getAllCopilotHooks,
   getHooksConfig as getCopilotHooksConfig,
 } from "../../src/templates/copilot/index.js";
-import { getHooksConfig as getCursorHooksConfig } from "../../src/templates/cursor/index.js";
+
 import {
   getAllAgents as getPiAgents,
   getExtensionTemplate as getPiExtensionTemplate,
@@ -107,13 +106,14 @@ const CONFIGURE_ONLY_PATHS = new Set([".claude/hooks/statusline.py"]);
  * `Map<path, content>` cannot express an empty directory, so each one is
  * named here against the platform that needs it.
  */
-const CONFIGURE_ONLY_EMPTY_DIRS: Partial<Record<(typeof PLATFORM_IDS)[number], string[]>> =
-  {
-    // Trellis ships no Codex-specific skills (they all land in
-    // `.agents/skills/`, which Codex reads too). The directory is still
-    // created so users have the conventional place for their own.
-    codex: [".codex/skills"],
-  };
+const CONFIGURE_ONLY_EMPTY_DIRS: Partial<
+  Record<(typeof PLATFORM_IDS)[number], string[]>
+> = {
+  // Trellis ships no Codex-specific skills (they all land in
+  // `.agents/skills/`, which Codex reads too). The directory is still
+  // created so users have the conventional place for their own.
+  codex: [".codex/skills"],
+};
 
 /** Every file under `root`, as POSIX paths relative to `root`. */
 function walkFiles(root: string, rel = ""): string[] {
@@ -195,7 +195,10 @@ describe("getConfiguredPlatforms", () => {
     });
     expect(getConfiguredPlatforms(tmpDir).has("devin")).toBe(false);
 
-    fs.writeFileSync(path.join(workflowsDir, "trellis-continue.md"), "# Trellis");
+    fs.writeFileSync(
+      path.join(workflowsDir, "trellis-continue.md"),
+      "# Trellis",
+    );
     const result = getConfiguredPlatforms(tmpDir);
     expect(result.has("devin")).toBe(true);
   });
@@ -435,38 +438,13 @@ describe("configurePlatform", () => {
     ).toBe(true);
   });
 
-  it("configurePlatform('codex') writes custom agents and config", async () => {
+  it("configurePlatform('codex') writes current-agent skills, hooks and config", async () => {
     await configurePlatform("codex", tmpDir);
-
-    const expectedAgents = getAllCodexAgents();
-    const codexAgentsRoot = path.join(tmpDir, ".codex", "agents");
-    const actualAgentNames = fs
-      .readdirSync(codexAgentsRoot)
-      .map((file) => file.replace(".toml", ""))
-      .sort();
-
-    expect(actualAgentNames).toEqual(
-      expectedAgents.map((agent) => agent.name).sort(),
-    );
-
-    for (const agent of expectedAgents) {
-      const agentPath = path.join(codexAgentsRoot, `${agent.name}.toml`);
-      expect(fs.existsSync(agentPath)).toBe(true);
-      const written = fs.readFileSync(agentPath, "utf-8");
-      // Native SubagentStart injects context, while every profile retains a
-      // marker-gated active-task pull fallback when the hook is unavailable.
-      expect(written).toBe(replacePythonCommandLiterals(agent.content));
-      expect(written).toContain("<!-- trellis-hook-injected -->");
-      expect(written).toContain("Active task: <path>");
-      expect(written).not.toContain("Required: Load Trellis Context First");
-    }
-
+    expect(fs.existsSync(path.join(tmpDir, ".codex", "agents"))).toBe(false);
     const config = getCodexConfigTemplate();
-    const configPath = path.join(tmpDir, ".codex", config.targetPath);
-    expect(fs.existsSync(configPath)).toBe(true);
-    expect(fs.readFileSync(configPath, "utf-8")).toBe(
-      replacePythonCommandLiterals(config.content),
-    );
+    expect(
+      fs.readFileSync(path.join(tmpDir, ".codex", config.targetPath), "utf-8"),
+    ).toBe(replacePythonCommandLiterals(config.content));
   });
 
   it("configurePlatform('codex') resolves PYTHON_CMD in hooks.json", async () => {
@@ -511,71 +489,43 @@ describe("configurePlatform", () => {
     expect(fs.existsSync(path.join(skillsRoot, BUNDLED_REFERENCE))).toBe(true);
   });
 
-  it("configurePlatform('kiro') writes main agent, IDE hook, and shared hooks", async () => {
+  it("configurePlatform('kiro') writes its main agent and main-session hooks", async () => {
     await configurePlatform("kiro", tmpDir);
-
-    const expectedPythonCmd =
-      process.platform === "win32" ? "python" : "python3";
-
-    // Shared hooks now include per-turn + session-start, not just subagent.
+    const py = process.platform === "win32" ? "python" : "python3";
     const hooksDir = path.join(tmpDir, ".kiro", "hooks");
-    for (const script of [
-      "inject-workflow-state.py",
-      "session-start.py",
-      "inject-subagent-context.py",
-    ]) {
-      expect(fs.existsSync(path.join(hooksDir, script))).toBe(true);
-    }
-
-    // Main `trellis` agent wires per-turn + session-start hooks; PYTHON_CMD
-    // resolved.
-    const trellisPath = path.join(tmpDir, ".kiro", "agents", "trellis.json");
-    expect(fs.existsSync(trellisPath)).toBe(true);
-    const trellisRaw = fs.readFileSync(trellisPath, "utf-8");
-    expect(trellisRaw).not.toContain("{{PYTHON_CMD}}");
-    const trellis = JSON.parse(trellisRaw) as {
-      resources?: string[];
-      hooks?: Record<string, { command: string }[]>;
-    };
-    expect(trellis.hooks?.userPromptSubmit?.[0].command).toBe(
-      `${expectedPythonCmd} .kiro/hooks/inject-workflow-state.py`,
+    for (const name of ["session-start.py", "inject-workflow-state.py"])
+      expect(fs.existsSync(path.join(hooksDir, name))).toBe(true);
+    expect(
+      fs.existsSync(path.join(hooksDir, "inject-subagent-context.py")),
+    ).toBe(false);
+    const trellisRaw = fs.readFileSync(
+      path.join(tmpDir, ".kiro", "agents", "trellis.json"),
+      "utf-8",
     );
-    expect(trellis.hooks?.agentSpawn?.[0].command).toBe(
-      `${expectedPythonCmd} .kiro/hooks/session-start.py`,
+    const trellis = JSON.parse(trellisRaw) as {
+      hooks: Record<string, { command: string }[]>;
+      resources: string[];
+    };
+    expect(trellis.hooks.userPromptSubmit[0]?.command).toBe(
+      py + " .kiro/hooks/inject-workflow-state.py",
+    );
+    expect(trellis.hooks.agentSpawn[0]?.command).toBe(
+      py + " .kiro/hooks/session-start.py",
     );
     expect(trellis.resources).toContain("file://.trellis/workflow.md");
-
-    // 3 sub-agents keep their inject-subagent-context.py spawn hook.
-    for (const name of [
-      "trellis-implement",
-      "trellis-check",
-      "trellis-research",
-    ]) {
-      const sub = JSON.parse(
-        fs.readFileSync(
-          path.join(tmpDir, ".kiro", "agents", `${name}.json`),
-          "utf-8",
-        ),
-      ) as { hooks?: Record<string, { command: string }[]> };
-      expect(sub.hooks?.agentSpawn?.[0].command).toBe(
-        `${expectedPythonCmd} .kiro/hooks/inject-subagent-context.py`,
-      );
-    }
-
-    // IDE `.kiro.hook` written with PYTHON_CMD resolved and valid schema.
-    const ideHookPath = path.join(hooksDir, "trellis-workflow-state.kiro.hook");
-    expect(fs.existsSync(ideHookPath)).toBe(true);
-    const ideRaw = fs.readFileSync(ideHookPath, "utf-8");
-    expect(ideRaw).not.toContain("{{PYTHON_CMD}}");
-    const ideHook = JSON.parse(ideRaw) as {
-      when: { type: string };
-      then: { type: string; command: string };
-    };
-    expect(ideHook.when.type).toBe("promptSubmit");
-    expect(ideHook.then.type).toBe("runCommand");
-    expect(ideHook.then.command).toBe(
-      `${expectedPythonCmd} .kiro/hooks/inject-workflow-state.py`,
-    );
+    expect(trellisRaw).not.toContain("{{PYTHON_CMD}}");
+    expect(fs.readdirSync(path.join(tmpDir, ".kiro", "agents"))).toEqual([
+      "trellis.json",
+    ]);
+    const ide = JSON.parse(
+      fs.readFileSync(
+        path.join(hooksDir, "trellis-workflow-state.kiro.hook"),
+        "utf-8",
+      ),
+    ) as { when: { type: string }; then: { type: string; command: string } };
+    expect(ide.when.type).toBe("promptSubmit");
+    expect(ide.then.type).toBe("runCommand");
+    expect(ide.then.command).toBe(py + " .kiro/hooks/inject-workflow-state.py");
   });
 
   it("configurePlatform('gemini') creates .gemini directory", async () => {
@@ -796,26 +746,11 @@ describe("configurePlatform", () => {
       fs.existsSync(
         path.join(tmpDir, ".grok", "agents", "trellis-implement.md"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(path.join(tmpDir, ".grok", "agents", "trellis-check.md")),
-    ).toBe(true);
-    const researchAgentPath = path.join(
-      tmpDir,
-      ".grok",
-      "agents",
-      "trellis-research.md",
-    );
-    expect(fs.existsSync(researchAgentPath)).toBe(true);
-    expect(fs.readFileSync(researchAgentPath, "utf-8")).not.toContain(
-      "Load Trellis Context First",
-    );
-    expect(
-      fs.readFileSync(
-        path.join(tmpDir, ".grok", "agents", "trellis-implement.md"),
-        "utf-8",
-      ),
-    ).toContain("Load Trellis Context First");
+    ).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".grok", "agents"))).toBe(false);
 
     const templates = collectPlatformTemplates("grok");
     expect(templates?.has(".grok/commands/trellis-start.md")).toBe(true);
@@ -825,209 +760,63 @@ describe("configurePlatform", () => {
         key.startsWith(".agents/skills/"),
       ),
     ).toBe(false);
-    expect(templates?.has(".grok/agents/trellis-implement.md")).toBe(true);
-    expect(templates?.has(".grok/agents/trellis-research.md")).toBe(true);
+    expect(templates?.has(".grok/agents/trellis-implement.md")).toBe(false);
+    expect(templates?.has(".grok/agents/trellis-research.md")).toBe(false);
   });
 
-  it("configurePlatform('snow') writes class-1 inject hooks, skills, commands, and agents", async () => {
+  it("configurePlatform('snow') keeps session hooks, skills and prompt commands", async () => {
     await configurePlatform("snow", tmpDir);
-
     expect(
       fs.existsSync(
         path.join(tmpDir, ".snow", "skills", "trellis-check", "SKILL.md"),
       ),
     ).toBe(true);
-    // hasHooks=true → trellis-start is filtered out (session inject replaces it)
     expect(
       fs.existsSync(
         path.join(tmpDir, ".snow", "skills", "trellis-start", "SKILL.md"),
       ),
     ).toBe(false);
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".snow", "commands", "trellis-start.json"),
-      ),
-    ).toBe(false);
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".snow", "commands", "trellis-continue.json"),
-      ),
-    ).toBe(true);
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".snow", "commands", "trellis-finish-work.json"),
-      ),
-    ).toBe(true);
-
-    const continueCmd = JSON.parse(
+    const command = JSON.parse(
       fs.readFileSync(
         path.join(tmpDir, ".snow", "commands", "trellis-continue.json"),
         "utf-8",
       ),
-    ) as { type: string; command: string; location: string };
-    expect(continueCmd.type).toBe("prompt");
-    expect(continueCmd.location).toBe("project");
-    expect(continueCmd.command).toContain(".trellis");
-
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".snow", "agents", "trellis-implement.md"),
-      ),
-    ).toBe(true);
-    expect(
-      fs.existsSync(path.join(tmpDir, ".snow", "agents", "trellis-check.md")),
-    ).toBe(true);
-    const researchAgentPath = path.join(
-      tmpDir,
-      ".snow",
-      "agents",
-      "trellis-research.md",
-    );
-    expect(fs.existsSync(researchAgentPath)).toBe(true);
-    // class-1: neither research nor implement ships class-2 pull prelude
-    expect(fs.readFileSync(researchAgentPath, "utf-8")).not.toContain(
-      "Load Trellis Context First",
-    );
-    expect(
-      fs.readFileSync(
-        path.join(tmpDir, ".snow", "agents", "trellis-implement.md"),
-        "utf-8",
-      ),
-    ).not.toContain("Load Trellis Context First");
-    expect(
-      fs.readFileSync(
-        path.join(tmpDir, ".snow", "agents", "trellis-implement.md"),
-        "utf-8",
-      ),
-    ).toContain("filesystem-read");
-    expect(
-      fs.readFileSync(
-        path.join(tmpDir, ".snow", "agents", "trellis-implement.md"),
-        "utf-8",
-      ),
-    ).toContain("beforeSubAgentStart");
-
-    // Native Snow projects can legitimately contain any of these directories;
-    // only Trellis-owned files recorded in the manifest count as configured.
-    const emptyDir = fs.mkdtempSync(
-      path.join(os.tmpdir(), "trellis-snow-det-"),
-    );
-    try {
-      fs.mkdirSync(path.join(emptyDir, ".snow"), { recursive: true });
-      fs.writeFileSync(path.join(emptyDir, ".snow", "settings.json"), "{}");
-      expect(getConfiguredPlatforms(emptyDir).has("snow")).toBe(false);
-      fs.mkdirSync(path.join(emptyDir, ".snow", "commands"), { recursive: true });
-      expect(getConfiguredPlatforms(emptyDir).has("snow")).toBe(false);
-      fs.mkdirSync(path.join(emptyDir, ".snow", "agents"), { recursive: true });
-      expect(getConfiguredPlatforms(emptyDir).has("snow")).toBe(false);
-      fs.mkdirSync(path.join(emptyDir, ".snow", "skills"), { recursive: true });
-      expect(getConfiguredPlatforms(emptyDir).has("snow")).toBe(false);
-    } finally {
-      fs.rmSync(emptyDir, { recursive: true, force: true });
-    }
-
-    const templates = collectPlatformTemplates("snow");
-    expect(templates?.has(".snow/commands/trellis-start.json")).toBe(false);
-    expect(templates?.has(".snow/skills/trellis-start/SKILL.md")).toBe(false);
-    expect(templates?.has(".snow/commands/trellis-continue.json")).toBe(true);
-    expect(templates?.has(".snow/agents/trellis-implement.md")).toBe(true);
-    expect(templates?.has(".snow/agents/trellis-research.md")).toBe(true);
-    expect(templates?.has(".snow/sub-agents.trellis.json")).toBe(false);
-    expect(templates?.has(".snow/hooks/onSessionStart.json")).toBe(true);
-    expect(templates?.has(".snow/hooks/onUserMessage.json")).toBe(true);
-    expect(templates?.has(".snow/hooks/beforeSubAgentStart.json")).toBe(true);
-    expect(templates?.has(".snow/hooks/write-trellis-context.py")).toBe(true);
-    expect(templates?.has(".snow/SNOW.md")).toBe(true);
-
-    const sessionHook = fs.readFileSync(
-      path.join(tmpDir, ".snow", "hooks", "onSessionStart.json"),
-      "utf-8",
-    );
-    const userHook = fs.readFileSync(
-      path.join(tmpDir, ".snow", "hooks", "onUserMessage.json"),
-      "utf-8",
-    );
-    const subHook = fs.readFileSync(
-      path.join(tmpDir, ".snow", "hooks", "beforeSubAgentStart.json"),
-      "utf-8",
-    );
-    expect(sessionHook).toContain("write-trellis-context.py session");
-    expect(userHook).toContain("write-trellis-context.py user");
-    expect(subHook).toContain("write-trellis-context.py subagent");
-
-    const hookPy = fs.readFileSync(
-      path.join(tmpDir, ".snow", "hooks", "write-trellis-context.py"),
-      "utf-8",
-    );
-    expect(hookPy).toContain("TRELLIS_SNOW_HOOK_MODE");
-    expect(hookPy).toContain("agentKind");
-    expect(hookPy).toContain("implement.jsonl");
-    expect(hookPy).toContain("COMPACT_MAX_BYTES");
-    expect(hookPy).toContain("SNOW_CWD");
-    expect(hookPy).toContain("sessionId");
-    // CodeRabbit hardening: short child timeout, session isolation, UTF-8 bytes, full log preserve
-    expect(hookPy).toContain("timeout=5");
-    expect(hookPy).not.toContain("timeout=15");
-    expect(hookPy).toContain("_current_session_ids");
-    expect(hookPy).toContain("never pick by mtime");
-    expect(hookPy).not.toContain("st_mtime");
-    expect(hookPy).toContain('encoded = text.encode("utf-8")');
-    expect(hookPy).toContain("full_context = build_context");
-
-    const snowGuide = fs.readFileSync(
-      path.join(tmpDir, ".snow", "SNOW.md"),
-      "utf-8",
-    );
-    expect(snowGuide).toContain("Do not use legacy sub-agent JSON merge files");
-    expect(snowGuide).toContain("class-1 hook inject");
-    expect(snowGuide.toLowerCase()).not.toContain("snocli");
-    expect(snowGuide.toLowerCase()).not.toContain("snow-cli");
-    expect(snowGuide).not.toContain("sub-agents.trellis.json");
-    expect(snowGuide).toContain("Session identity");
-    expect(snowGuide).toContain("SNOW_SESSION_ID");
-    expect(snowGuide).toContain("TRELLIS_CONTEXT_ID");
-
-    const implementAgent = fs.readFileSync(
-      path.join(tmpDir, ".snow", "agents", "trellis-implement.md"),
-      "utf-8",
-    );
-    expect(implementAgent.toLowerCase()).not.toContain("snocli");
-    expect(implementAgent.toLowerCase()).not.toContain("snow-cli");
-    expect(implementAgent).toContain("auto-loaded from");
-    // class-1: no class-2 pull-based prelude text
-    expect(implementAgent).not.toContain(
-      "This platform does NOT auto-inject task context via hook",
-    );
-    expect(implementAgent).toContain("no class-2 pull prelude");
-    expect(implementAgent).toContain("filesystem-read");
-    expect(implementAgent).toContain("terminal-execute");
-
-    expect(
-      fs.existsSync(path.join(tmpDir, ".snow", "sub-agents.trellis.json")),
-    ).toBe(false);
-    expect(
-      fs.existsSync(path.join(tmpDir, ".snow", "hooks", "onSessionStart.json")),
-    ).toBe(true);
+    ) as { type: string; location: string; command: string };
+    expect(command.type).toBe("prompt");
+    expect(command.location).toBe("project");
+    expect(command.command).toContain(".trellis");
+    expect(fs.existsSync(path.join(tmpDir, ".snow", "agents"))).toBe(false);
     expect(
       fs.existsSync(
         path.join(tmpDir, ".snow", "hooks", "beforeSubAgentStart.json"),
       ),
-    ).toBe(true);
-    expect(
-      fs.existsSync(
-        path.join(tmpDir, ".snow", "hooks", "write-trellis-context.py"),
-      ),
-    ).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, ".snow", "SNOW.md"))).toBe(true);
-    expect(
-      fs.readFileSync(path.join(tmpDir, ".snow", "SNOW.md"), "utf-8"),
-    ).toContain("class-1");
-
-    expect(AI_TOOLS.snow.templateContext.hasHooks).toBe(true);
-    expect(AI_TOOLS.snow.hasPythonHooks).toBe(true);
-    expect(AI_TOOLS.snow.extraManagedPaths ?? []).not.toContain(
-      ".snow/sub-agents.trellis.json",
+    ).toBe(false);
+    for (const [name, mode] of [
+      ["onSessionStart", "session"],
+      ["onUserMessage", "user"],
+    ]) {
+      expect(
+        fs.readFileSync(
+          path.join(tmpDir, ".snow", "hooks", name + ".json"),
+          "utf-8",
+        ),
+      ).toContain("write-trellis-context.py " + mode);
+    }
+    const hook = fs.readFileSync(
+      path.join(tmpDir, ".snow", "hooks", "write-trellis-context.py"),
+      "utf-8",
     );
+    expect(hook).toContain("COMPACT_MAX_BYTES");
+    expect(hook).toContain("_current_session_ids");
+    expect(hook).not.toContain("st_mtime");
+    expect(hook).not.toContain("implement.jsonl");
+    const guide = fs.readFileSync(
+      path.join(tmpDir, ".snow", "SNOW.md"),
+      "utf-8",
+    );
+    expect(guide).toContain("Session identity");
+    expect(guide).toContain("SNOW_SESSION_ID");
+    expect(guide).toContain("TRELLIS_CONTEXT_ID");
   });
 
   it("configurePlatform('dsh') writes shared + dsh-private skills and the operator guide", async () => {
@@ -1148,27 +937,11 @@ describe("configurePlatform", () => {
       fs.existsSync(
         path.join(tmpDir, ".zcode", "agents", "trellis-implement.md"),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(path.join(tmpDir, ".zcode", "agents", "trellis-check.md")),
-    ).toBe(true);
-    const researchAgentPath = path.join(
-      tmpDir,
-      ".zcode",
-      "agents",
-      "trellis-research.md",
-    );
-    expect(fs.existsSync(researchAgentPath)).toBe(true);
-    const implementAgent = fs.readFileSync(
-      path.join(tmpDir, ".zcode", "agents", "trellis-implement.md"),
-      "utf-8",
-    );
-    expect(implementAgent).toContain("Trellis Context Loading Protocol");
-    expect(implementAgent).toContain("<!-- trellis-hook-injected -->");
-    expect(implementAgent).not.toContain("Load Trellis Context First");
-    expect(fs.readFileSync(researchAgentPath, "utf-8")).not.toContain(
-      "Load Trellis Context First",
-    );
+    ).toBe(false);
+    expect(fs.existsSync(path.join(tmpDir, ".zcode", "agents"))).toBe(false);
 
     const generatedConfig = readConfiguredFile(tmpDir, ".zcode/config.json");
     expect(generatedConfig).toContain(
@@ -1177,7 +950,7 @@ describe("configurePlatform", () => {
     expect(generatedConfig).toContain(
       "${ZCODE_PROJECT_DIR}/.zcode/hooks/inject-workflow-state.py",
     );
-    expect(generatedConfig).toContain(
+    expect(generatedConfig).not.toContain(
       "${ZCODE_PROJECT_DIR}/.zcode/hooks/inject-subagent-context.py",
     );
 
@@ -1203,18 +976,12 @@ describe("configurePlatform", () => {
     );
     expect(templates?.has(".zcode/skills/trellis-check/SKILL.md")).toBe(true);
     expect(templates?.has(".zcode/skills/trellis-meta/SKILL.md")).toBe(true);
-    expect(templates?.has(".zcode/agents/trellis-implement.md")).toBe(true);
-    expect(templates?.has(".zcode/agents/trellis-check.md")).toBe(true);
-    expect(templates?.has(".zcode/agents/trellis-research.md")).toBe(true);
-    expect(templates?.get(".zcode/agents/trellis-implement.md")).toContain(
-      "Trellis Context Loading Protocol",
-    );
-    expect(templates?.get(".zcode/agents/trellis-implement.md")).not.toContain(
-      "Load Trellis Context First",
-    );
-    expect(templates?.get(".zcode/agents/trellis-research.md")).not.toContain(
-      "Load Trellis Context First",
-    );
+    expect(templates?.has(".zcode/agents/trellis-implement.md")).toBe(false);
+    expect(templates?.has(".zcode/agents/trellis-check.md")).toBe(false);
+    expect(templates?.has(".zcode/agents/trellis-research.md")).toBe(false);
+    expect(
+      templates?.get(".zcode/agents/trellis-implement.md"),
+    ).toBeUndefined();
   });
 
   it("configurePlatform('codebuddy') creates .codebuddy directory", async () => {
@@ -1511,13 +1278,13 @@ describe("configurePlatform", () => {
     ).toBe(true);
     expect(
       fs.existsSync(path.join(tmpDir, ".pi", "agents", "trellis-implement.md")),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(path.join(tmpDir, ".pi", "agents", "trellis-check.md")),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(path.join(tmpDir, ".pi", "agents", "trellis-research.md")),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(
         path.join(tmpDir, ".pi", "extensions", "trellis", "index.ts"),
@@ -1529,17 +1296,15 @@ describe("configurePlatform", () => {
       path.join(tmpDir, ".pi", "extensions", "trellis", "index.ts"),
       "utf-8",
     );
-    expect(extension).toContain("registerTool?.({");
-    expect(extension).toContain('name: "trellis_subagent"');
+    expect(extension).not.toContain("registerTool?.({");
+    expect(extension).not.toContain('name: "trellis_subagent"');
     expect(extension).toContain('pi.on?.("session_start"');
     expect(extension).toContain('pi.on?.("tool_call"');
     expect(extension).toContain("ctx?.sessionManager?.getSessionId");
-    expect(extension).toContain("TRELLIS_PI_CLI_JS");
-    expect(extension).toContain("function formatPiOutput");
-    expect(extension).toContain('"## Trellis Agent Definition"');
+
     expect(extension).toContain("ctx?.ui?.notify?.(");
     expect(extension).toContain("systemPrompt:");
-    expect(extension).toContain("isTrellisAgent(root, agentName)");
+
     expect(extension).not.toContain("message: buildTrellisContext");
     expect(extension).not.toContain('message:\n      "Trellis project context');
     expect(extension).not.toContain("persistent: true");
@@ -1621,9 +1386,7 @@ describe("configurePlatform", () => {
         ".agents/skills/trellis-spec-bootstrap/references/spec-writing.md",
       ),
     ).toBeDefined();
-    expect(templates?.get(".pi/agents/trellis-implement.md")).toContain(
-      "Required: Load Trellis Context First",
-    );
+    expect(templates?.get(".pi/agents/trellis-implement.md")).toBeUndefined();
     expect(templates?.get(".pi/extensions/trellis/index.ts")).toBe(
       replacePythonCommandLiterals(getPiExtensionTemplate()),
     );
@@ -1676,12 +1439,11 @@ describe("configurePlatform", () => {
     );
   });
 
-  it("cursor hooks.json matches both documented and native subagent tool names", () => {
-    const hooksConfig = JSON.parse(getCursorHooksConfig()) as {
-      hooks: { preToolUse: { matcher: string }[] };
-    };
-
-    expect(hooksConfig.hooks.preToolUse[0].matcher).toBe("Task|Subagent");
+  it("cursor hooks keep the shell identity bridge without subagent injection", () => {
+    const config =
+      collectPlatformTemplates("cursor")?.get(".cursor/hooks.json");
+    expect(config).toContain("inject-shell-session-context.py");
+    expect(config).not.toContain("inject-subagent-context.py");
   });
 
   it("collectPlatformTemplates('copilot') includes tracked + discovery hooks config", () => {

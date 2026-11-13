@@ -61,18 +61,11 @@ The AI can run:
 python3 ./.trellis/scripts/get_context.py --mode packages
 ```
 
-This command lists packages and spec layers for the current project. Use this output as the reference when configuring context JSONL.
+This command lists packages and spec layers for the current project. Use this output to identify the applicable guidelines for direct reading.
 
 ## How Specs Enter Tasks
 
-Before a task enters implementation, planning may write relevant specs into `implement.jsonl` / `check.jsonl` when the task needs spec or research context beyond the task artifacts:
-
-```jsonl
-{"file": ".trellis/spec/cli/backend/index.md", "reason": "CLI backend conventions"}
-{"file": ".trellis/spec/cli/unit-test/conventions.md", "reason": "Test expectations"}
-```
-
-Sub-agents or platform preludes read these JSONL files and load the referenced specs. On platforms without sub-agent support, the AI should read the relevant specs directly according to the workflow.
+Before a task enters implementation, record essential spec and research references in the task artifacts. The current agent loads these files through `trellis-before-dev`, and re-reads applicable quality guidelines through `trellis-check`.
 
 ## What Specs Should Contain
 
@@ -93,8 +86,8 @@ When the AI learns a new rule during implementation or debugging, it should upda
 | --- | --- |
 | Add a new spec layer | `.trellis/spec/<package>/<layer>/index.md` and corresponding guideline files. |
 | Change monorepo spec mapping | `packages` / `default_package` / `spec_scope` in `.trellis/config.yaml`. |
-| Change which specs AI reads before implementation | The task's `implement.jsonl`. |
-| Change which specs AI reads during checking | The task's `check.jsonl`. |
+| Change which specs AI reads before implementation | Task artifact references and `trellis-before-dev`. |
+| Change which specs AI reads during checking | Task artifact references and `trellis-check`. |
 | Change when specs should be updated | Phase 3.3 in `.trellis/workflow.md` and the `trellis-update-spec` skill. |
 
 ## Boundaries

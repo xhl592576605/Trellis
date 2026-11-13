@@ -126,30 +126,6 @@ if sys.platform.startswith("win"):
 
 
 
-def _has_curated_jsonl_entry(jsonl_path: Path) -> bool:
-    """Return True iff jsonl has at least one row with a ``file`` field.
-
-    A newly created jsonl is empty, and older tasks may still carry a
-    ``{"_example": ...}`` placeholder row (no ``file`` key) — neither is
-    "ready". Readiness requires at least one curated entry. Matches the
-    contract used by hook-inject and pull-based sub-agent context loaders.
-    """
-    try:
-        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(row, dict) and row.get("file"):
-                return True
-    except (OSError, UnicodeDecodeError):
-        return False
-    return False
-
-
 def should_skip_injection() -> bool:
     """Check if any platform's non-interactive flag is set, or if Trellis
     hooks are explicitly disabled via TRELLIS_HOOKS=0 / TRELLIS_DISABLE_HOOKS=1.
@@ -452,7 +428,7 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
 
     task_title = task_data.get("title", task_ref)
     task_status = task_data.get("status", "unknown")
-    artifact_names = ("prd.md", "design.md", "implement.md", "implement.jsonl", "check.jsonl")
+    artifact_names = ("prd.md", "design.md", "implement.md")
     present = [name for name in artifact_names if (task_dir / name).is_file()]
     if (task_dir / "research").is_dir():
         present.append("research/")
@@ -468,13 +444,6 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
     has_prd = (task_dir / "prd.md").is_file()
     has_design = (task_dir / "design.md").is_file()
     has_implement_plan = (task_dir / "implement.md").is_file()
-    implement_jsonl = task_dir / "implement.jsonl"
-    check_jsonl = task_dir / "check.jsonl"
-    jsonl_ready = (
-        (not implement_jsonl.is_file() or _has_curated_jsonl_entry(implement_jsonl))
-        and (not check_jsonl.is_file() or _has_curated_jsonl_entry(check_jsonl))
-    )
-
     if task_status == "planning" and not has_prd:
         return (
             f"Status: PLANNING\nTask: {task_title}\n"
@@ -498,8 +467,6 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
             )
         else:
             next_bits.append("Planning artifacts are present; ask for review before `task.py start`")
-        if not jsonl_ready:
-            next_bits.append("curate `implement.jsonl` and `check.jsonl` before sub-agent mode start")
         return (
             f"Status: PLANNING\nTask: {task_title}\n"
             f"Present: {present_line}\n"
@@ -510,7 +477,7 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
         f"Status: {str(task_status).upper()}\nTask: {task_title}\n"
         f"Present: {present_line}\n"
         "Next-Action: Follow the matching per-turn workflow-state. "
-        "Implementation/check context order is jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`."
+        "Implementation/check context order is `prd.md` -> `design.md if present` -> `implement.md if present`."
     )
 
 

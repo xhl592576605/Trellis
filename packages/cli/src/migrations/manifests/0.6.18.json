@@ -1,0 +1,700 @@
+{
+  "version": "0.6.18",
+  "description": "Run the default workflow entirely in the current agent",
+  "breaking": true,
+  "recommendMigrate": false,
+  "changelog": "Research, implementation, and checking now run in the current agent. Task lifecycle and planning artifacts are preserved. Workflow subagent roles, dispatch tools, and handoff requirements are removed.",
+  "migrations": [
+    {
+      "type": "safe-file-delete",
+      "from": ".claude/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "9e48342243f311d55386f8fb42933945e87aba73d5ade547133aa98345a06128",
+        "5351d80498d747bda757635c09ac687a4b00cf5fee2b5cc5649ba00565024f9d",
+        "1bf0085dee5aae88cc812191cee11ee5f26e21ffe15031b088f3afacab62a0dd",
+        "ae9627928ce6987d6b49a831db243429af32271b7f55c63274a2632d50217541"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".claude/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "73b56b3047c0e852382c4630aa181fb847d1e5ea1f63459dac4bf728f43fd097",
+        "aa3cd0272622edbef621a820ae180438131f00c48dc774a4a1d973ebf5be17ec",
+        "0c10a8044c4b71acbeea7c3482a0b27b96ecf18a46250c902f20989199068027",
+        "3fc1200b5ee3843689de2b8db61088fa26372840c7b25682b69c882aa0eff80f"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".claude/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "add4aa4259ded425b04ec992802c646490352bb4eb3730a7ab450beea87d4faa",
+        "10aecdd3d0777746a516e23cd2a55c9e9c8a015dc98c63ffbac36be21b7a7bb0",
+        "856bb5d1566cdf532404180b89b3c2932103d5ac1a096417aba8a09a97e89323"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codebuddy/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "9e48342243f311d55386f8fb42933945e87aba73d5ade547133aa98345a06128",
+        "5351d80498d747bda757635c09ac687a4b00cf5fee2b5cc5649ba00565024f9d",
+        "1bf0085dee5aae88cc812191cee11ee5f26e21ffe15031b088f3afacab62a0dd",
+        "ae9627928ce6987d6b49a831db243429af32271b7f55c63274a2632d50217541"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codebuddy/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "73b56b3047c0e852382c4630aa181fb847d1e5ea1f63459dac4bf728f43fd097",
+        "aa3cd0272622edbef621a820ae180438131f00c48dc774a4a1d973ebf5be17ec",
+        "0c10a8044c4b71acbeea7c3482a0b27b96ecf18a46250c902f20989199068027",
+        "3fc1200b5ee3843689de2b8db61088fa26372840c7b25682b69c882aa0eff80f"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codebuddy/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "add4aa4259ded425b04ec992802c646490352bb4eb3730a7ab450beea87d4faa",
+        "10aecdd3d0777746a516e23cd2a55c9e9c8a015dc98c63ffbac36be21b7a7bb0",
+        "856bb5d1566cdf532404180b89b3c2932103d5ac1a096417aba8a09a97e89323"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codex/agents/trellis-check.toml",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "206fd96a8aa17e95ed344cc435661d597093ece571671f298ca64490422fffe0"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codex/agents/trellis-implement.toml",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "388fb8f39797e0ee6cf4db447c859c79b4ac15f531f7e1e3c68c1d1d71a1c188"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codex/agents/trellis-research.toml",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "4435ce73197ba1d29d40359a3279b6423f7e4f559a449f934c016808090066c4"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".cursor/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "e54d3de996bab4abd7653eef4d64c171638fbc2859e9b1fe4aae2483df72de99",
+        "9c4683226d8c51706e5516b11121267b4134b262e7006202c74d3afb85835718",
+        "404839930c88ed046ddecc7983957587cf481f2b266f71199d7e5903aa4f744d",
+        "b614e877c3affdff0a39214f66f68120da7286c51eb3e91ecb5177b54fec367b"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".github/agents/trellis-check.agent.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "e54d3de996bab4abd7653eef4d64c171638fbc2859e9b1fe4aae2483df72de99",
+        "9c4683226d8c51706e5516b11121267b4134b262e7006202c74d3afb85835718",
+        "0dd9510b74b9ac14c340d27c384dfde2639a9cb0c7e243f92d838c9258b7d991",
+        "20eb550f0df7b9d7d31cfbd0160550f894459087463d9bd6371be9978f841b34",
+        "404839930c88ed046ddecc7983957587cf481f2b266f71199d7e5903aa4f744d",
+        "b614e877c3affdff0a39214f66f68120da7286c51eb3e91ecb5177b54fec367b",
+        "fbe9585c95d86b8e3c7db5dca9ab6c5765765ac83d710c9e5029238359650ae6",
+        "ac554b61c8caa5183c57ec4586369b27db30680c7ec6a5033191fadf177af0ce"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".cursor/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "636d55ebb56d9d3ea6ef9ec615c53bcaeab2b1afb3dc7e30ad51091efe5ab5ea",
+        "4b25c5326989bec187523be00918360b1f92af0301a609f6c95c4b3febcef9fe",
+        "81b487e35ea2dc737beafa28204b1d9cb80ba4ce1107dbb83c331bcba6b89971",
+        "d2cf028b710ee8cfc0c79b01359daaa33f04a1233fa882513ed8f01f7f625df3"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".github/agents/trellis-implement.agent.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "636d55ebb56d9d3ea6ef9ec615c53bcaeab2b1afb3dc7e30ad51091efe5ab5ea",
+        "4b25c5326989bec187523be00918360b1f92af0301a609f6c95c4b3febcef9fe",
+        "cdd16627284c58e114a7f9a1c5060edf8c6972d926caba688ba8129fc71342b4",
+        "72cea7d2be199d1ce19622d1f32173f9978a5657451c7296b2881768d99c8e32",
+        "81b487e35ea2dc737beafa28204b1d9cb80ba4ce1107dbb83c331bcba6b89971",
+        "d2cf028b710ee8cfc0c79b01359daaa33f04a1233fa882513ed8f01f7f625df3",
+        "23d185eb78aa426194405c0e234746c4e4bfaee13acb0ae7ff20e10dc748833b",
+        "3bf7baf642407ca67a1d67332e3e505a84a07721d0c65ea591e609e47b5f94c8"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".cursor/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "1311b229a5d8c2c388ceb52460c3d837aa982c988aac39fb9ae30385072fbacf",
+        "e39b18734b4947ada2d1d6b2432f82daf58d16b6d98aa5b8b78e4a5364559617",
+        "86b1a54a3d2febbcee1c819bbaac909a97f699fb84a5e14ad8d2db1918e7435e"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".github/agents/trellis-research.agent.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "1311b229a5d8c2c388ceb52460c3d837aa982c988aac39fb9ae30385072fbacf",
+        "ee7c2bf9d285689e2d05b74aee123bdf5d6ae851d78b5c9d4c7760e639c2bd65",
+        "e39b18734b4947ada2d1d6b2432f82daf58d16b6d98aa5b8b78e4a5364559617",
+        "86b1a54a3d2febbcee1c819bbaac909a97f699fb84a5e14ad8d2db1918e7435e",
+        "fa1dc2cc49047039c9d9239f7c7e94ece4df666137bb976b2c51d433d21acfcf",
+        "8c531cacaa00754218ecb6e4e2b2d42decddc695354ca0caf70a94bf08d5794d"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".factory/droids/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "fc0d204db20baabbc31c689ebc40269bc513ea14ade30342cfd5c2d7b6706830",
+        "fe0fa50d41aeb766d09dcf4d6f4e227bafa40050eee0594c225c8bbe88ef27fc",
+        "63f721948898c440312809a10d0ac21d61dc2065e398e34ace84d35b6d2ef6e9",
+        "24ba2ce85bdc45e331a74d74118684f761d4d8ceaf6fac5274dc4197119788ad"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".factory/droids/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "eb7b4302595e4c1438fdc6af1226dbf6e05bb7288e25a226754f3e466677339f",
+        "4c6800f96a7a6947d283af0072ec8daca5f7bfd4fa6812b3e2825a8a5131e504",
+        "500140647ee2c89018965aa623a1777bf04b9593828fcd30f22e310ac150173b",
+        "8f4d0a38884b176772d9d3fdaf9ee29a00590dd159a5f0bf7236c472a62f5846"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".factory/droids/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "add4aa4259ded425b04ec992802c646490352bb4eb3730a7ab450beea87d4faa",
+        "10aecdd3d0777746a516e23cd2a55c9e9c8a015dc98c63ffbac36be21b7a7bb0",
+        "856bb5d1566cdf532404180b89b3c2932103d5ac1a096417aba8a09a97e89323"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".gemini/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "68c1f3e9618974b38f39a633775520b40d92a7403bb06b7f3e93f968cb961d43",
+        "5946164bbf96b230d19852cb77f83faca6383dac71df8ac10bef3632d0deb047",
+        "0a3d74c4bd1e75ab7936ad85c22a6279930da47c6d131469a51f61193fe2d123",
+        "929cf850aa04df40e1956c829deb47e3c3da668337adce3084ddba509e5b4009"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".gemini/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "ba98e963fb9ea85ca6fc373ed6458526f9fdea282b4aa9fa9225431b995cb45e",
+        "82eca06cbf204dde2bb226769aa6aa3b3ababf487bfd08905982c323f76a3a79",
+        "ae2e0b7a47f1adbb3b13cb85ed68f9e438cc25a5c48956efe898b07bb5306292",
+        "9a5176eb03f2b02ea4864d875136685deb5fdd2fee5203d845e1e3ddbb3acaf6"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".gemini/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "fdccaef6caa3710b5741610f2df53f8a6cf981ab68abf5786ba426b684dfdad3",
+        "d68bdb3e755fe0ba4a1b25492082e1cac1289edb49a5002c97a2a1385ba3121d",
+        "58e60575231642299e2ca30758447f1ac96272d346d9b0513202543971b07df5"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".grok/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "15f3a5c6bd1da05919b242d416ffa8dd473d7fbd7de2cdb91d61b698ee010c5c",
+        "8c2015780c71f1e911145611bc62c00697f847faa81cbbfc64f7163e28fe3728",
+        "5db00c9bc3c15d2bc3122f8d0613e2b51588ce0a12d167d88b256e6747c78ece",
+        "77b1f09e99238aad77635de8d9fa490b24b77be49492703cd3c161f5485e4294"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".grok/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "5a504f47f62861d2d275540bfb9b813caa256e8db4fb5324b627cdb75bea1254",
+        "c5f849aaf893b10e15fa621d347e9595e959a8edd79320598fcf3611ded5d7da",
+        "b09f41b639cbd3fafe6acc699807cc1c076f6b77fae29fb3e4f70be1c9d8883e",
+        "f3b270df354f00557efe7b9339bfc010c6a12e813a8640cc057d2f0385f75efd"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".grok/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "6cac71ba3f777c41a6cef82127860d77babc7b6a793bdcc9919351c5d4cab90a",
+        "27fa52acdd54f3cce59a5c6fdbc5415d6678a17e79e978cb39634125d289b9dd",
+        "acbda9eb33e2f2d80bc6f743fca42bf7f7eeafc7ecbdfdbd495ead79fcabd0c4"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kimi-code/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "3f09bbfd322a7289378f52ec3ee9ffdb986c11bff0065aa92329953279eee431",
+        "16bd335dba587bb051b32beedfc462ca81209d220e8f9555026a8a7c63823da0",
+        "16098ecfbdf1b24ea3c1fa9022fb8d467517d7f4ed130a653a05b3ab97a62f90",
+        "23a0ce93e1cc8c252ffc538385f835e16c829453533ac989fce47af88b33aff3"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kimi-code/skills/trellis-check/SKILL.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "3f09bbfd322a7289378f52ec3ee9ffdb986c11bff0065aa92329953279eee431",
+        "16bd335dba587bb051b32beedfc462ca81209d220e8f9555026a8a7c63823da0",
+        "16098ecfbdf1b24ea3c1fa9022fb8d467517d7f4ed130a653a05b3ab97a62f90",
+        "23a0ce93e1cc8c252ffc538385f835e16c829453533ac989fce47af88b33aff3"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kimi-code/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "015613e9ea1abd7f65bf29709cce1aac69cce44e114ba4ef2b8fc9946b97d7d9",
+        "7b8181761e0bd4e2b3f2fcdc1e3862bfd92782e21508130ae2ca4e1e016cef75",
+        "06d1ae5a56c2ca63dc5e9c324fab84a057f596ba89c5b45d6930d4c9c0c2ceff",
+        "ebf5cba1a9287db316b0f46c4f5d6475bc7ecdf5f0b62dcb2b6fcee26350c688"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kimi-code/skills/trellis-implement/SKILL.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "015613e9ea1abd7f65bf29709cce1aac69cce44e114ba4ef2b8fc9946b97d7d9",
+        "7b8181761e0bd4e2b3f2fcdc1e3862bfd92782e21508130ae2ca4e1e016cef75",
+        "06d1ae5a56c2ca63dc5e9c324fab84a057f596ba89c5b45d6930d4c9c0c2ceff",
+        "ebf5cba1a9287db316b0f46c4f5d6475bc7ecdf5f0b62dcb2b6fcee26350c688"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kimi-code/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "01685ecb25aad883b653531977e833995565594f2589f50472815f71ca0ebaf6",
+        "99df90ac3b21358c48fa7177b2be7ec96a1d0c5e4d2869536dda30e17820f338",
+        "2f68a27e96a0048ccb5433a75a7c46aa0c0f4a4a5672f3c605499ac6aecd7138"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kimi-code/skills/trellis-research/SKILL.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "01685ecb25aad883b653531977e833995565594f2589f50472815f71ca0ebaf6",
+        "99df90ac3b21358c48fa7177b2be7ec96a1d0c5e4d2869536dda30e17820f338",
+        "2f68a27e96a0048ccb5433a75a7c46aa0c0f4a4a5672f3c605499ac6aecd7138"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kiro/agents/trellis-check.json",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "da0df9ee0ab5a2e063309aaaf528bb3bcab9d3c4170428daf506e8dbb66754bf",
+        "00a8a83fa8bc96001dcb143f0b3fc4ad636909d236916650dd045bdfe5e13bd1",
+        "dabc03963f7c86c94896a776684240abb38aae727448a7acdbe9613777b4e59c",
+        "09a58e169cb14fa53d591eeca620e9c2f66a6b13e15c04b2711e3d06969ab112"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kiro/agents/trellis-implement.json",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "025a4f886a059e701c436bc77c9e9f72e25a53c20406be490128bc38b087cdeb",
+        "9d048c3cb23d90efb9e741e39e4c0c83feb45f01ad21d7d1051313d7543353da",
+        "accf9807aa4731b4769c813b76e2eb54dcb7a4730317d63cfaaf2e4b52a95393",
+        "4e7c6fef7c506ebbf0a7806e1739a072a1839b8f98288cec83287525252ea9fd"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kiro/agents/trellis-research.json",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "cdf6b8fff49494e77635398b0ec5883f29a5e9a35d668de0026fa0aaa1343d10",
+        "686fa06162215f994d1aabc76afa8e3ae2f85baed1f9483fb21552db7eb791e6",
+        "9c749b081fbf3f22ac0b2d116e89b379937cfd49b9a44d9bc865a5785b953a3a",
+        "ac202255319f38e9438cf91ae3a38f1fa5ea35e90b2294d6f04daf631a00010e"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".omp/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "6b9f25cea043374813692d99a216d3793c57a456bc32508c05c17d708c35dbb0",
+        "d11465aa2133d747f9d59e0d24c772f1c0f7787bc69ed6fb6ccb703a0ae40e1d",
+        "bd3ecbe22fd1779085cc794e207485159f1728cd703b3f0a7473f24f7b250173",
+        "8e99928c5bfc5dae70cd237cb13aa15138138e7aeb259b068b3d7dd3ed261c4c"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".omp/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "0401d018cc24c0ca5285fca35fe493e8891a5f5fb06b595377508bed864dac34",
+        "c05ca1218860245c24dbfdc00f9de51a25fb1e58a6933cae2fb9bad3c77c5811",
+        "13880a3c1da4bcd6bfcb31c714c4d8d0fdc43b7e30ffecaec0185e0416fb4c43",
+        "7e1836f9bb8780284831f6c985e36c222ce2ef31ebcde87facb5a00ca5a60823"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".omp/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "f1b9a2b15220540df637043b7d07c6cce6f2d333c197c765f856ff1d0579c01c",
+        "f0e084fa6575e8c1656a0d1b3ab2e623f0843b225c738aa1ace11a1bde57e868",
+        "ea0b68a41990ca5a0a3ad5a2981a201b7ebb7255803f0185665ed18d316ca860"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".opencode/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "ab0dd630f34c1ace0ce15180ffb0f6de919a75262e21bbece93ccbac9d9bc709",
+        "83dbeceb43ff200d1986cdaf4dc87a23dfcb514fbcf67cd4b9ddb9067bbb34e3",
+        "406eaa47ee096bba549feee71240655d35e2213a4973a0b819c9dfbf210c5433",
+        "43857177fa9b19f87f7c6dd3c8a70be5e4d3642a1fd9045f8044816cb4183dec",
+        "9bd0c6af2dbc6edef83b20d7875b68f40a387f5384529ea8b51795f05fb93de3",
+        "868b3849a27c914e1ce7589ca0d17bc28c6a050dd179f53f3959b178759a4d4f"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".opencode/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "6d0647915518ad8441ac5eae5c965a6b8dde23ff3a336b0b8dc31aad50212bfc",
+        "ed5df586e61f1e26fb7165b8f153ee7a5ad51572b74a05cc1bc3f2675392401b",
+        "feab0628efbd49f44b0bf596147cad312c400cff57a1fb05354179001d28dae0",
+        "5396bf4469268627fcc37c9e565dc036319eeb12d97eb97ad9858615ede7e6d8",
+        "1815251a619d82dd3563dd332c3d50786934ef6f8d15a0c158cb64dde3b1e7c3",
+        "8e44765321f368a5321b5f2723f269903c20488e30cd8fe404fcb1c6ea46c215"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".opencode/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "2c5135aefe280fd4508554e58c64bd13f5f9fe58b8bb25393e68496b29bfae4e",
+        "6315e859f3a336708defcc7d82a3d549df2f9ea74e887c1c30f6a60d8d60f98b",
+        "5b5af6904311ad59616add0beded2c8de17dc3e749028033f40a686fbdf13cf0"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".pi/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "98fb1f3a70e7d164f53353c662f354d395bdaeb18624dcbae778777e089de766",
+        "f6df0b1ff2ae5dc9634e3a4e327de63d20be8d77ab3f54c374c2a3acf1450d3f",
+        "84d5fed56abf9621e638ae20ca92277f54d469a1edc85c4ac9871490e299cd59",
+        "c450408751b584266c4e53f705c5f1891953dfb701ca0f155e06152cd7bb092f"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".pi/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "2d04f6a072be1b288edd421b26ac49f3c4011456342c86b4a9b82c3a47d6b02f",
+        "75e25a3b2d09dbcd49e37cdac4dc28453f341ab4eab0d0074ac84500e23e0cd2",
+        "fecdfe0a820f90b18041a3fb62f013cfa2dbf4f93e916641d3040473fb9dcd5d",
+        "16f83d5664d9d4ed7bdca0e53f3c94f3ca219a62e9f9c3597e2edc70c5879f04"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".pi/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "ef77555f4c2c4ade36f1c23a076b6f4bb9d180ff24a2f00d7cdc2f8fd5af0b0a",
+        "887648b24bc0befdb4fb157a58571d6a548336b869279945047d9f81e743751c",
+        "f60ef8da10b8711a38ce73d98e66b4b1d8418be78fa535625ce0dd07461ae942"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".qoder/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "dd742ed4a03b162035a55be908e8f3ae711bfe50d9d39990d7b07ddd6a15a176",
+        "fbab1c36333ea265c72eac8d671386443522e9d6fd1a4c8e901a518692436302",
+        "4d408e3bb848a72a62a1a38dc47a55b8582a18c1dc2a5d8b1a6a440b7fe11a31",
+        "2a4f3c705db6e296893a4ff464bdabd6481ae12553cd9bfc4b1a21da01d27703"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".qoder/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "e1caa919a9686bf07fb1b65b38173bb651602bbd0c8f40f4c90913cadd4346c1",
+        "a9a4ec6ad7cddc50a357eab3512c89e9e0888f4e1dc3598461297acb16f49290",
+        "4bf8f5010f90b8ec77370581380935e7699d96c4c546cbc1a85eed6f95608359",
+        "64615d93ffb329eaf489a89dc94f780beec069d63753c9d1f3ee46331d43e1f2"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".qoder/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "add4aa4259ded425b04ec992802c646490352bb4eb3730a7ab450beea87d4faa",
+        "10aecdd3d0777746a516e23cd2a55c9e9c8a015dc98c63ffbac36be21b7a7bb0",
+        "856bb5d1566cdf532404180b89b3c2932103d5ac1a096417aba8a09a97e89323"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".reasonix/skills/trellis-check/SKILL.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "8db22352a4e9984f95743281105989274b45d115a1df2542981b4205bdfe5abc",
+        "d0acc44c6e4a9759724a3e77a49d8b299f4885d6190d0402d2d3544c2618cc18",
+        "b6241995e15b33ec40f74d35f86736487706c9f37c90e827fb5da781aedaa681",
+        "5f080aa2f01fa632aeae598475171c494331f74d8f0e3a729158230c2aeff152"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".reasonix/skills/trellis-implement/SKILL.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "8507af0326afd4261fb8b1f5f7e7b78cd551b96e8a8c4dc10be436eb6c78e81e",
+        "736222865af6f38325831a1c68747252529a698fc745cb30079e7f6f1fbda3ac",
+        "4c17088a918ba59bc7bf8ce9ee0ff74bfa3eecf63230341cd9f282f0bf94e05e",
+        "a7f415e1e6955df1b220438b3a877e2d8439d73efdf3374a7ba785e57c760b4e"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".snow/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "37d7c802ffbcd3b97635ec2c45d41d226f70dd8928015a6a372e8d8cafe79ba8",
+        "ec9c0a4647c5b6550f325aa80823f1ee01b8dc467ac373a2f43bc703964c497f",
+        "f10c1e1ef824b0ef1d813d2f63d9af8043be5f2dfaa542f6a816647a97b9ecf4",
+        "38ae6ae5dc8c1d5e96903cf3cbc05425a38effff74320f0eaf997d9e47f8110e"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".snow/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "e8c1c4b14444d4589223c235aec7805803d1eb54ece0826dd43e7210aaf4a9d2",
+        "1724b4f66e438823a4fe1e8913e9151a1b6c9d331323de3479f0585c32159404",
+        "179b46bb65c780a4c949a9fd1e0e7b5e2aede3ab4220b0bb3dc063fdf455ac46",
+        "e3bc2e25baa4e0d9e1ce2fd34f32a0fb0d385a4029f0f826365063b1095f93aa"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".snow/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "7e1786ec5170a1a59ff9f4d68991c53c0fd16a11c748042fa07cbff5f42cdc8f",
+        "c43b234acdc7aa3f4b6db4f7045798143ff00462a7424cac389c6e57aaccde09",
+        "6209a11995d899aa9faa94c00a00c652d3ca9e9289e14c600161e304c50f6967"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".trae/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "dd742ed4a03b162035a55be908e8f3ae711bfe50d9d39990d7b07ddd6a15a176",
+        "fbab1c36333ea265c72eac8d671386443522e9d6fd1a4c8e901a518692436302",
+        "4d408e3bb848a72a62a1a38dc47a55b8582a18c1dc2a5d8b1a6a440b7fe11a31",
+        "2a4f3c705db6e296893a4ff464bdabd6481ae12553cd9bfc4b1a21da01d27703"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".trae/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "e1caa919a9686bf07fb1b65b38173bb651602bbd0c8f40f4c90913cadd4346c1",
+        "a9a4ec6ad7cddc50a357eab3512c89e9e0888f4e1dc3598461297acb16f49290",
+        "4bf8f5010f90b8ec77370581380935e7699d96c4c546cbc1a85eed6f95608359",
+        "64615d93ffb329eaf489a89dc94f780beec069d63753c9d1f3ee46331d43e1f2"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".trae/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "7ebd1103ba77e484823ea203d65f74963fadc14979f87aec3a48e0466571482f",
+        "82cd2988c9bb6102eac97f89dfcb1215688b98b49d18973d0e95fbcdee4d3618",
+        "36ac60c6017f6b0c423a3af5dd71137dd9205a9201949ae6b8b0b81450e20271"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".zcode/agents/trellis-check.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "9d48b731d4e2cb034c0c85ff291b732c330d34deca88767c470e9c49884c9445",
+        "5fa854c63a58c5a3548dccb9198d5df0cc5a0bcb965925bec02cbc42e3852bda",
+        "0b2a48bb11d838e2bcdadf3f82f62e6971d05ae9f7dd1063bae52670233fe266",
+        "3f0da200aab99cc40df59698f644b76cfab3c825dab343ba2ae16a3b22d997b2"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".zcode/agents/trellis-implement.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "a3c18fbc99ccecafdae869456075d8e81e2e6c1e3a69f1fe53b83ade18873f1d",
+        "d01af92f9b2968b4b8e796ba15d1c981409e1f3959d2e464e70d844e66bcc022",
+        "c8ea170da674dbc002ced2242b4740ca4f58ecac6da7bd49d457689369745761",
+        "236efb94ada9e1d236c2432c5b2430d4f60610fe1ee99839b3cf3da2a60edbc5"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".zcode/agents/trellis-research.md",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "ee78c7d7019309b172fa68e1c0e0aa4c0527685a7f35e873e175e35ff02116f2",
+        "ef7fcddb131536eb5d9606c8ef3f789b2edeb2b3b68ae13c237faa4917cfc751",
+        "32fea2d9a7452a415d2510e85bb87bfcc6b387be1da5e92c3de32d400ab978b9"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".claude/hooks/inject-subagent-context.py",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "022d41a9b6f5dba45bc284a466206fbefedf93f2504a6fe30141ec91c3fbc1ae",
+        "a84240165c66a8891bf1d7eed06a3bcc26aefa219dc98db8192f3cb73c112c89",
+        "1ee1289d23b6ff3dfd6fc0fd47bd08d2dc1e50751dbcfb62c1b2d4bee303e0c8"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".cursor/hooks/inject-subagent-context.py",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "022d41a9b6f5dba45bc284a466206fbefedf93f2504a6fe30141ec91c3fbc1ae",
+        "a84240165c66a8891bf1d7eed06a3bcc26aefa219dc98db8192f3cb73c112c89",
+        "1ee1289d23b6ff3dfd6fc0fd47bd08d2dc1e50751dbcfb62c1b2d4bee303e0c8"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codex/hooks/inject-subagent-context.py",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "022d41a9b6f5dba45bc284a466206fbefedf93f2504a6fe30141ec91c3fbc1ae",
+        "a84240165c66a8891bf1d7eed06a3bcc26aefa219dc98db8192f3cb73c112c89",
+        "1ee1289d23b6ff3dfd6fc0fd47bd08d2dc1e50751dbcfb62c1b2d4bee303e0c8"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".codebuddy/hooks/inject-subagent-context.py",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "022d41a9b6f5dba45bc284a466206fbefedf93f2504a6fe30141ec91c3fbc1ae",
+        "a84240165c66a8891bf1d7eed06a3bcc26aefa219dc98db8192f3cb73c112c89",
+        "1ee1289d23b6ff3dfd6fc0fd47bd08d2dc1e50751dbcfb62c1b2d4bee303e0c8"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".factory/hooks/inject-subagent-context.py",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "022d41a9b6f5dba45bc284a466206fbefedf93f2504a6fe30141ec91c3fbc1ae"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".kiro/hooks/inject-subagent-context.py",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "022d41a9b6f5dba45bc284a466206fbefedf93f2504a6fe30141ec91c3fbc1ae",
+        "a84240165c66a8891bf1d7eed06a3bcc26aefa219dc98db8192f3cb73c112c89",
+        "1ee1289d23b6ff3dfd6fc0fd47bd08d2dc1e50751dbcfb62c1b2d4bee303e0c8"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".zcode/hooks/inject-subagent-context.py",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "022d41a9b6f5dba45bc284a466206fbefedf93f2504a6fe30141ec91c3fbc1ae",
+        "a84240165c66a8891bf1d7eed06a3bcc26aefa219dc98db8192f3cb73c112c89",
+        "1ee1289d23b6ff3dfd6fc0fd47bd08d2dc1e50751dbcfb62c1b2d4bee303e0c8"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".opencode/plugins/inject-subagent-context.js",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "48c2e19d5d9c3fedc006e7ce12eb792bbe5193760290c2a588bed3f9cccacc4f"
+      ]
+    },
+    {
+      "type": "safe-file-delete",
+      "from": ".snow/hooks/beforeSubAgentStart.json",
+      "description": "Retire workflow subagent integration; execution now stays in the current agent",
+      "allowed_hashes": [
+        "d99a4cc6459584edbdd52f2dd06ce27d39a245ed4252b926d453486a1a5eee6f"
+      ]
+    }
+  ],
+  "notes": "Unmodified legacy workflow subagent files are removed safely. Customized files and existing task materials are preserved."
+}

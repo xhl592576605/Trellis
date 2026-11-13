@@ -46,7 +46,7 @@ Once you know which step to resume at:
 python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X> --platform omp
 ```
 
-Follow the loaded instructions. After each `[required]` step completes, move to the next.
+The current agent follows the loaded instructions directly. After each `[required]` step completes, move to the next.
 
 ---
 

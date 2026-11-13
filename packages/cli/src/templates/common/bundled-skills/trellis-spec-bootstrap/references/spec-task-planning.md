@@ -48,14 +48,6 @@ Summarize the concrete findings from repository analysis.
 - [ ] Claims are backed by source files, tests, or project docs.
 ```
 
-## Optional Helper Agents
+## Execution
 
-If the host supports subagents, helpers can inspect independent packages or run verification. They are optional. The main agent still owns integration and final quality.
-
-Helper tasks must have clear ownership:
-
-- Read-only research tasks may inspect any source needed for the assigned scope.
-- Write tasks should own disjoint spec directories.
-- Verification tasks should check placeholder removal, broken links, and consistency.
-
-Do not encode helper-agent names, vendor-specific commands, or platform-specific routing in the skill. Put only the required work and acceptance criteria in the task.
+The current agent inspects each ownership boundary, writes the corresponding specs, and verifies placeholders, links, and cross-package consistency directly. Record progress in task artifacts when work spans sessions.

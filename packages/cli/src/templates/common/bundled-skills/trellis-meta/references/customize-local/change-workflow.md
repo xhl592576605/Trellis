@@ -1,6 +1,6 @@
 # Change Local Workflow
 
-When the user wants to change Trellis phases, next-action hints, whether to create tasks, whether to use sub-agents, or when to check/wrap up, edit `.trellis/workflow.md` first.
+When the user wants to change Trellis phases, next-action hints, whether to create tasks, or when to check/wrap up, edit `.trellis/workflow.md` first.
 
 ## Read These Files First
 
@@ -39,9 +39,9 @@ Task is not required when the answer is a one-reply explanation, no files are ch
 
 If the formal Phase 1 flow also needs to change, synchronize the Phase 1 section.
 
-## Example: One Platform Does Not Use Sub-Agents
+## Current-Agent Execution
 
-If the user wants only one platform to avoid sub-agents, first confirm whether that platform has a separate group in the workflow. Then change Phase 2 routing for that platform group instead of deleting all `trellis-implement` / `trellis-check` instructions across platforms.
+Research, implementation, and checking run in the current session on every platform. Keep `trellis-before-dev` and `trellis-check` as directly executed skills, and update the matching state blocks when changing their order.
 
 ## `/trellis:continue` Route Table
 

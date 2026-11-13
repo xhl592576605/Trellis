@@ -27,7 +27,9 @@ export function collectKiroTemplates(): Map<string, string> {
   )) {
     files.set(filePath, content);
   }
-  for (const agent of getAllAgents()) {
+  for (const agent of getAllAgents().filter(
+    (entry) => entry.name === "trellis",
+  )) {
     files.set(
       `.kiro/agents/${agent.name}.json`,
       resolvePlaceholders(agent.content),

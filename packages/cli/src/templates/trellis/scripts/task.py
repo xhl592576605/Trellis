@@ -72,7 +72,6 @@ from common.task_context import (
     cmd_add_context,
     cmd_validate,
     cmd_list_context,
-    curated_entry_count,
 )
 
 
@@ -191,29 +190,6 @@ def cmd_start(args: argparse.Namespace) -> int:
         print("Hint: Use task name (e.g., 'my-task') or full path (e.g., '.trellis/tasks/01-31-my-task')")
         return 1
 
-    # Context-manifest gate (#573): a seeded-but-uncurated implement/check
-    # manifest means every sub-agent dispatched for this task runs with zero
-    # spec context, and nothing downstream surfaces that to the main session.
-    # An absent manifest is not gated — create seeds the files only on
-    # sub-agent-capable platforms, so absence means no sub-agent reads them.
-    if not getattr(args, "allow_empty_context", False):
-        empty_manifests = [
-            name
-            for name in ("implement.jsonl", "check.jsonl")
-            if curated_entry_count(full_path / name) == 0
-        ]
-        if empty_manifests:
-            print(colored(
-                f"Error: {' and '.join(empty_manifests)} "
-                f"{'has' if len(empty_manifests) == 1 else 'have'} no curated entries",
-                Colors.RED,
-            ))
-            print("Sub-agents (implement/check) would run with zero spec context.")
-            print(f"  Curate:  python3 .trellis/scripts/task.py add-context {task_input} implement <path> \"<why>\"")
-            print(f"  Verify:  python3 .trellis/scripts/task.py validate {task_input}")
-            print("  Intentionally empty? Re-run start with --allow-empty-context")
-            return 1
-
     # Convert to relative path for storage. repo_root is resolved because
     # full_path already is (resolve_task_dir only returns paths inside the
     # resolved root), so an unresolved repo_root would mismatch under a
@@ -263,7 +239,7 @@ def cmd_start(args: argparse.Namespace) -> int:
             _record_start_state(task_json_path, repo_root)
 
         print()
-        print(colored("The hook will now inject context from this task's jsonl files.", Colors.BLUE))
+        print(colored("The current agent can now read task artifacts and applicable specs.", Colors.BLUE))
 
         run_task_hooks("after_start", task_json_path, repo_root)
         return 0
@@ -597,36 +573,6 @@ Examples:
 
 def main() -> int:
     """CLI entry point."""
-    # Deprecation guard: `init-context` was removed in v0.5.0-beta.12.
-    # Detect early so argparse doesn't mask the real reason with a generic
-    # "invalid choice" error.
-    if len(sys.argv) >= 2 and sys.argv[1] == "init-context":
-        print(
-            colored(
-                "Error: `task.py init-context` was removed in v0.5.0-beta.12.",
-                Colors.RED,
-            ),
-            file=sys.stderr,
-        )
-        print(
-            "implement.jsonl / check.jsonl are now seeded on `task.py create` for",
-            file=sys.stderr,
-        )
-        print(
-            "sub-agent-capable platforms and curated by the AI during planning when needed.",
-            file=sys.stderr,
-        )
-        print("See .trellis/workflow.md planning artifact guidance or run:", file=sys.stderr)
-        print(
-            "  python3 ./.trellis/scripts/get_context.py --mode phase --step 1",
-            file=sys.stderr,
-        )
-        print(
-            "Use `task.py add-context <dir> implement|check <path> <reason>` to append entries.",
-            file=sys.stderr,
-        )
-        return 2
-
     parser = argparse.ArgumentParser(
         description="Task Management Script",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -684,11 +630,6 @@ def main() -> int:
     # start
     p_start = subparsers.add_parser("start", help="Set active task")
     p_start.add_argument("dir", help="Task directory")
-    p_start.add_argument(
-        "--allow-empty-context",
-        action="store_true",
-        help="Start even when implement.jsonl / check.jsonl have no curated entries",
-    )
 
     # current
     p_current = subparsers.add_parser("current", help="Show active task")

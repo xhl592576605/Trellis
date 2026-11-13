@@ -8,7 +8,7 @@ For per-platform integration mechanics (which directory each platform writes, wh
 
 ## Overview
 
-`configurators/shared.ts` exists to keep the per-platform configurators — one `configurators/<platform>.ts` per entry in `AI_TOOLS`, 21 of them — from independently re-implementing the same byte-for-byte rendering, write, and prelude-injection logic. Drift between configurators reliably becomes a bug:
+`configurators/shared.ts` exists to keep the per-platform configurators — one `configurators/<platform>.ts` per entry in `AI_TOOLS`, 21 of them — from independently re-implementing the same byte-for-byte rendering and write logic. Drift between configurators reliably becomes a bug:
 
 - If two platforms render `{{PYTHON_CMD}}` differently, `trellis update`'s template-hash compare reports a phantom diff after every install.
 - If two configurators that both write into `.agents/skills/` resolve `{{CMD_REF}}` per-platform, the last writer wins and clobbers the other (see `platform-integration.md` "Rule: `.agents/skills/` writes use `resolvePlaceholdersNeutral()`").
@@ -70,37 +70,11 @@ These build the `Map<relPath, content>` that a `collect<Platform>Templates()` re
 
 `configurators/shared.ts:collectBothTemplates(ctx, cmdPath, skillRoot, wrapCmd?)` — commands + skills for "both" platforms (a command surface *and* a skill root). `cmdPath(name)` returns the command's relative path so each platform keeps its own layout; `wrapCmd(filePath, content)` is the optional per-platform command wrapper. Used by cursor, antigravity, devin, kilo, qoder.
 
-`configurators/shared.ts:collectSharedHooks(hooksPath, platform)` — the platform-independent Python hook scripts from `templates/shared-hooks/` that `platform` actually registers, keyed under `hooksPath`. The list comes from `templates/shared-hooks/index.ts:SHARED_HOOKS_BY_PLATFORM` via `getSharedHookScriptsForPlatform` — configurators must not hand-pick files, because the table is also what `shared-hooks.test.ts` checks the platform's hook config against (see `platform-integration.md` "Declaring a shared hook is half the wiring"). Class-2 (pull-based) platforms are simply absent from `inject-subagent-context.py`'s entry — they can't mutate sub-agent prompts. Extension-backed platforms (Pi Agent) must not call this at all.
+`configurators/shared.ts:collectSharedHooks(hooksPath, platform)` — the platform-independent Python hook scripts from `templates/shared-hooks/` that `platform` actually registers, keyed under `hooksPath`. The list comes from `templates/shared-hooks/index.ts:SHARED_HOOKS_BY_PLATFORM` via `getSharedHookScriptsForPlatform` — configurators must not hand-pick files, because the table is also what `shared-hooks.test.ts` checks the platform's hook config against (see `platform-integration.md` "Declaring a shared hook is half the wiring"). Extension-backed platforms use native lifecycle APIs instead of Python hook distribution.
 
 `configurators/shared.ts:renderTemplateMap(files)` — applies `replacePythonCommandLiterals` to every value of a map. The one place the Windows rewrite runs; `writeTemplateMap` and `collectPlatformTemplates` both go through it, which is what makes their bytes equal by construction rather than by discipline.
 
 `configurators/shared.ts:writeTemplateMap(cwd, files)` — renders through `renderTemplateMap`, then writes every entry under `cwd`, creating parent directories. Map keys are split on `/` (`shared.ts:560`), which is why keys must be POSIX — the guide's `toPosix`-at-the-boundary rule is now load-bearing for the write path, not just the hash dictionary. Idempotent.
-
-### Pull-based prelude (class-2 platforms)
-
-`configurators/shared.ts:SubAgentType` — `"implement" | "check"`. `research` is intentionally excluded — research doesn't depend on an active task; it traverses the spec tree.
-
-`configurators/shared.ts:buildPullBasedPrelude` — returns the standard "Required: Load Trellis Context First" block. Used by class-2 platforms whose hook can't inject the sub-agent prompt (Gemini, Qoder, Codex, Copilot). The prelude tells the sub-agent to: (1) read `Active task: <path>` from the dispatch prompt; (2) fall back to `task.py current --source`; (3) ask the user. See `platform-integration.md` "Active task discovery on class-2 platforms (issue #225)" for why all three layers are needed.
-
-`configurators/shared.ts:detectSubAgentType` — returns `"implement"` / `"check"` / `null` from a filename like `trellis-implement.md`. Strips `.md`, `.toml`, `.prompt.md`. Returns `null` for `trellis-research` and unknown names — they skip the prelude.
-
-`configurators/shared.ts:injectPullBasedPreludeMarkdown` — inserts the prelude after a markdown agent's YAML frontmatter, or prepends it if there's no frontmatter.
-
-`configurators/shared.ts:injectPullBasedPreludeToml` — inserts the prelude inside Codex's `developer_instructions = """` block. No-op if the regex doesn't match (defensive — Codex agents always have `developer_instructions`, but if a future agent skips it, the prelude is simply omitted rather than corrupting TOML).
-
-`configurators/shared.ts:applyPullBasedPreludeMarkdown` — apply over a list of `AgentContent`. Convenience wrapper used by class-2 markdown configurators; agents whose `name` doesn't resolve to `implement`/`check` pass through unchanged.
-
-`configurators/shared.ts:applyPullBasedPreludeToml` — TOML equivalent for Codex.
-
-Apply the transform where the agent entries are added to the map, so both paths inherit it from the one description — `for (const agent of applyPullBasedPreludeMarkdown(getAllAgents())) files.set(…)`. Live in `gemini.ts:46`, `qoder.ts:32`, `trae.ts:36`, `copilot.ts:56`, plus grok, kimi and pi.
-
-### Copilot frontmatter normalization
-
-`configurators/shared.ts:normalizeCopilotMarkdownAgents` — Copilot's `tools:` frontmatter uses a different vocabulary (`read` / `edit` / `search` / `execute` / `web` / `exa/*`) than the canonical Claude vocabulary (`Read` / `Write` / `Edit` / `Glob` / `Grep` / `Bash` / `mcp__exa__*`). This helper rewrites a markdown agent's `tools:` line from canonical to Copilot vocabulary. Applied once, inside the `getCursorAgents()` → `normalizeCopilotMarkdownAgents` → `applyPullBasedPreludeMarkdown` chain that feeds `collectCopilotTemplates`'s map entries (`copilot.ts:56-57`).
-
-The internal `mapLegacyToolToCopilot` table is the source of truth for the mapping; if Copilot ever extends its tool vocabulary, edit that switch and add a regression test.
-
----
 
 ## Template maps — a platform's file set, described once
 
@@ -160,7 +134,7 @@ export function collectPlatformTemplates(id: AITool): Map<string, string> | unde
 | `codex` | `ensureDir(.codex/skills)` (`codex.ts:206`) | An intentionally empty directory — a user extension point with no file in it |
 | `zcode` | one-shot stderr notice that ZCode does not hot-reload hook config (`zcode.ts:82-88`) | Console output, not a file |
 
-`codex` also post-processes the map with `preserveCodexAgentModelKeys(cwd, files)` before writing. That is a map transform, not a residual: it reads `cwd` so it cannot live in `collectTemplates`, but `update.ts:921` runs the same function over its own rendered map, so the two still agree. Note the ordering — `configureCodex` renders *before* preserving (`codex.ts:197`) so the preserved user keys are grafted onto exactly the bytes update compares against.
+Codex writes the shared current-agent skill and main-session hook map directly; role model preservation is no longer part of map generation.
 
 **Nothing else may decide what a platform installs.** No second directory walk, no additional write inside `configure`, no "and also copy this one file" in `commands/init.ts`. Migrations still name specific paths — that is their job (deleting or renaming files a *previous* version installed) and it is a different question from what the current version installs. Tests may assert specific paths; they must not be the source of them.
 
@@ -277,8 +251,6 @@ Configurators must respect these. They are not enforced by types; tests in `test
 - **A platform's file set is described once.** `collect<Platform>Templates()` is that description; `configure` writes it. See "Template maps" above for the full contract, the three permitted residuals, and the parity oracle that enforces it in both directions.
 - **`replacePythonCommandLiterals` runs once per map, in `renderTemplateMap`.** Both `writeTemplateMap` (init) and `collectPlatformTemplates` (update) go through it, so the rewrite cannot land on one path only. A configurator that calls it per entry is either wrapping the value in another encoding (`snow.ts:85`) or duplicating work — the rewrite is idempotent, so the duplicate is harmless but pointless.
 - **`.agents/skills/` writes use `resolvePlaceholdersNeutral`.** See `platform-integration.md` "Rule: `.agents/skills/` writes use `resolvePlaceholdersNeutral()`". Per-platform skill roots (`.claude/skills/`, `.qoder/skills/`, etc.) keep using `resolvePlaceholders`.
-- **Class-2 agent definitions carry the pull-based prelude.** `applyPullBasedPreludeMarkdown` / `applyPullBasedPreludeToml` must run on every class-2 platform's `trellis-implement` and `trellis-check` definitions (research is intentionally exempt).
-- **Pull-based prelude wording is the same on every class-2 platform.** They all call `buildPullBasedPrelude`. A platform that hand-rolls its own prelude breaks the cross-platform contract documented in `platform-integration.md` "Active task discovery on class-2 platforms".
 - **`start.md` is filtered only on `agentCapable && hasHooks` platforms.** `filterCommands` is private; `resolveCommands` / `resolveAllAsSkills` / `resolveAllAsSkillsNeutral` apply it. The filter intentionally keeps `start` when `hasHooks=false` (Codex / ZCode / OpenCode / Reasonix) — those platforms have no SessionStart-style hook to inject opening context, so users need an invocable `start`. Configurators must not bypass these resolvers and call `getCommandTemplates()` directly — that re-introduces `start` on hook-bearing platforms that don't need it. Inversely, **a configurator must not re-implement its own "filter start" rule** — that's how the 0.5.5 → 0.6.4 Codex special-case helper (`resolveCodexTrellisStartSkill`) leaked into the codebase and stayed there for three release lines. Pi is the only approved prompt fallback exception, and it still obtains `start` through `resolveCommands` with the Pi context adjusted to `hasHooks: false`.
 - **Skill / command descriptions live in `SKILL_DESCRIPTIONS` / `COMMAND_DESCRIPTIONS`.** Adding a workflow skill or palette command requires adding the description here; the wrapper helpers throw at init if the description is missing.
 - **Bundled skills already own frontmatter.** `wrapWithSkillFrontmatter` must not be applied to `resolveBundledSkills` output. `collectSkillTemplates` takes bundled files as a separate third argument for this reason.
@@ -404,25 +376,6 @@ Wrong: adding a new skill template under `templates/common/skills/foo.md` withou
 
 Correct: edit `SKILL_DESCRIPTIONS` in `configurators/shared.ts` to add the new entry, then add a regression test asserting `wrapWithSkillFrontmatter("trellis-foo", "...")` does not throw. The throw at init time is the safety net that prevents shipping a skill the AI matcher can never trigger.
 
-### Applying prelude to research
-
-Wrong:
-
-```typescript
-// In collectGeminiTemplates, by hand
-for (const agent of agents) {
-  agent.content = injectPullBasedPreludeMarkdown(agent.content, "implement");
-}
-```
-
-This applies the prelude even to `trellis-research`, which doesn't have an active task to load. Correct: use `applyPullBasedPreludeMarkdown(agents)` — `detectSubAgentType` returns `null` for research, so the helper passes it through unchanged.
-
-### Class-1 platform calling `applyPullBasedPreludeMarkdown`
-
-Wrong: a hook-inject platform (Claude, Cursor, CodeBuddy, OpenCode, Kiro, Droid) running `applyPullBasedPreludeMarkdown` on its agent definitions.
-
-Correct: hook-inject platforms inject context via `inject-subagent-context.py` (or OpenCode's plugin). Adding the prelude to the agent definition duplicates the context payload — once via the hook prompt mutation and once via the agent's startup self-load. Only class-2 platforms apply the prelude.
-
 ### Reading `process.platform` directly inside a configurator helper
 
 Wrong:
@@ -454,7 +407,7 @@ Most behavior here is covered by:
 
 - `test/configurators/index.test.ts` — exercises `resolvePlaceholders`, `resolvePlaceholdersNeutral`, conditional blocks, `start` filtering, `wrapWithSkillFrontmatter` throw-on-missing-description.
 - `test/configurators/platforms.test.ts` — the whole-registry `configure` ⟷ `collectTemplates` parity oracle (both directions, both rendering modes, empty dirs, idempotency) plus per-platform content checks.
-- `test/regression.test.ts` — historical issue gates: pull-based prelude alignment between write/collect (issue #225); `.agents/skills/` neutral rendering byte-identity; Codex `trellis-start` skill present after both init and update.
+- `test/regression.test.ts` — historical issue gates: `.agents/skills/` neutral rendering byte-identity; Codex `trellis-start` skill present after both init and update.
 - `test/templates/<platform>.test.ts` — that the relevant resolver returns the expected set for each platform.
 
 When adding a new helper to `shared.ts`:

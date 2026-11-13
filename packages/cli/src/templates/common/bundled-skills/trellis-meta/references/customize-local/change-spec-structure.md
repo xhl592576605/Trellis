@@ -7,7 +7,7 @@ When the user wants to change the engineering conventions AI follows, add new sp
 1. `.trellis/config.yaml`
 2. `.trellis/spec/`
 3. `.trellis/workflow.md` planning artifact guidance and Phase 3.3
-4. Current task `implement.jsonl` / `check.jsonl`
+4. Current task `prd.md` / `design.md` / `implement.md`
 
 ## Common Needs
 
@@ -18,7 +18,7 @@ When the user wants to change the engineering conventions AI follows, add new sp
 | Adjust monorepo packages | `packages` in `.trellis/config.yaml` |
 | Change default package | `default_package` in `.trellis/config.yaml` |
 | Control spec scanning scope | `spec_scope` in `.trellis/config.yaml` |
-| Make a task read a new spec | Task `implement.jsonl` / `check.jsonl` |
+| Make a task read a new spec | Task `prd.md` / `design.md` / `implement.md` |
 
 ## Add A Spec Layer
 

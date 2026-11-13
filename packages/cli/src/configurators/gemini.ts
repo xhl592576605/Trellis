@@ -6,12 +6,8 @@ import {
   resolveBundledSkills,
   collectSkillTemplates,
   collectSharedHooks,
-  applyPullBasedPreludeMarkdown,
 } from "./shared.js";
-import {
-  getAllAgents,
-  getSettingsTemplate,
-} from "../templates/gemini/index.js";
+import { getSettingsTemplate } from "../templates/gemini/index.js";
 
 /**
  * The Gemini CLI file set — written at init and diffed by `trellis update`.
@@ -23,7 +19,6 @@ import {
  *   which collided with Codex's identical write target and caused
  *   duplicate-skill warnings — issue #224). The neutral resolver keeps content
  *   byte-identical to Codex's writes for the same skill names.
- * - agents/{name}.md — sub-agent definitions, with pull-based prelude
  * - hooks/*.py — session-start only (no inject-subagent-context.py — Gemini
  *   BeforeTool can fire but #18128 limits chain-of-thought visibility; sub-agents
  *   Read jsonl/prd themselves)
@@ -43,12 +38,12 @@ export function collectGeminiTemplates(): Map<string, string> {
   )) {
     files.set(filePath, content);
   }
-  for (const agent of applyPullBasedPreludeMarkdown(getAllAgents())) {
-    files.set(`.gemini/agents/${agent.name}.md`, agent.content);
-  }
   for (const [k, v] of collectSharedHooks(".gemini/hooks", "gemini")) {
     files.set(k, v);
   }
-  files.set(".gemini/settings.json", resolvePlaceholders(getSettingsTemplate()));
+  files.set(
+    ".gemini/settings.json",
+    resolvePlaceholders(getSettingsTemplate()),
+  );
   return files;
 }

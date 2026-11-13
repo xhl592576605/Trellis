@@ -161,41 +161,12 @@ _PLATFORM_MARKER_LABELS: dict[str, str] = {
 
 
 def resolve_effective_platform(platform: str, config: dict) -> str:
-    """Map ``codex`` to a dispatch-mode-namespaced virtual platform name.
+    """Resolve platform ids to workflow marker labels.
 
-    When ``--platform codex`` is passed, return ``"codex-sub-agent"`` by
-    default or ``"codex-inline"`` when explicitly configured in
-    ``.trellis/config.yaml``. ``sub-agent`` remains an alias for ``auto``.
-    ``filter_platform`` then surfaces blocks whose marker lists include the
-    namespaced name (e.g. ``[codex-sub-agent, ...]`` or ``[codex-inline, Kilo,
-    Antigravity, Devin]``).
-
-    Native Codex context injection supports the ``auto`` default. Invalid
-    explicit values fall back to ``inline`` safely; this renderer deliberately
-    does not warn because it can run in normal CLI output flows.
-
-    Platforms whose marker label differs from their id resolve through
-    ``_PLATFORM_MARKER_LABELS``. Everything else is returned unchanged.
+    All platforms execute work in the current agent. Legacy dispatch settings
+    do not change the selected workflow steps.
     """
-    label = _PLATFORM_MARKER_LABELS.get(platform.strip().lower())
-    if label:
-        return label
-    if platform == "codex":
-        mode = "auto"
-        codex_cfg = config.get("codex") if isinstance(config, dict) else None
-        if codex_cfg is not None:
-            if not isinstance(codex_cfg, dict):
-                mode = "inline"
-            else:
-                cfg_mode = str(codex_cfg.get("dispatch_mode", mode)).strip().lower()
-                if cfg_mode == "inline":
-                    mode = "inline"
-                elif cfg_mode in ("auto", "sub-agent"):
-                    mode = "auto"
-                else:
-                    mode = "inline"
-        return "codex-sub-agent" if mode == "auto" else "codex-inline"
-    return platform
+    return _PLATFORM_MARKER_LABELS.get(platform.strip().lower(), platform)
 
 
 def filter_platform(content: str, platform: str) -> str:

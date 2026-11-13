@@ -5,9 +5,8 @@ import {
   wrapWithCommandFrontmatter,
   collectBothTemplates,
   collectSharedHooks,
-  applyPullBasedPreludeMarkdown,
 } from "./shared.js";
-import { getAllAgents, getSettingsTemplate } from "../templates/trae/index.js";
+import { getSettingsTemplate } from "../templates/trae/index.js";
 
 /**
  * The Trae IDE file set — written at init and diffed by `trellis update`.
@@ -33,9 +32,6 @@ export function collectTraeTemplates(): Map<string, string> {
       return wrapWithCommandFrontmatter(name, content);
     },
   );
-  for (const agent of applyPullBasedPreludeMarkdown(getAllAgents())) {
-    files.set(`.trae/agents/${agent.name}.md`, agent.content);
-  }
   for (const [k, v] of collectSharedHooks(".trae/hooks", "trae")) {
     files.set(k, v);
   }

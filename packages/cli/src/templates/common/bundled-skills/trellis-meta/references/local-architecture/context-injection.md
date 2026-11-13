@@ -30,24 +30,9 @@ workflow-state is a lightweight hint injected around each user turn. Based on cu
 
 If the user wants to change "what the AI should do next in a given state," edit the corresponding state block in `.trellis/workflow.md` first.
 
-## sub-agent context
+## Task and Spec Context
 
-Implement and check agents need task context. Trellis has two loading modes:
-
-1. **hook push**: a platform hook injects jsonl-referenced files plus `prd.md`, `design.md` if present, and `implement.md` if present before the agent starts.
-2. **agent pull**: the agent definition instructs the agent to read the active task, jsonl context, and task artifacts after startup.
-
-In both modes, JSONL files in the task directory are the manifest for spec/research context. Task artifacts are read separately in this order: `prd.md` -> `design.md if present` -> `implement.md if present`.
-
-## JSONL Reading Rules
-
-`implement.jsonl` and `check.jsonl` contain one JSON object per line:
-
-```jsonl
-{"file": ".trellis/spec/backend/index.md", "reason": "Backend rules"}
-```
-
-Readers should skip rows without a `file` field (e.g. legacy `_example` placeholders). When configuring JSONL, the AI should include only spec/research files, not pre-register code files that will be modified.
+The current agent reads `prd.md`, optional `design.md` / `implement.md`, research, and applicable specs directly. Use `trellis-before-dev` to discover and read guidelines and `trellis-check` for verification. Existing legacy JSONL files remain user-owned task material; they are not generated or required for task start.
 
 ## Active Task And Context Key
 
@@ -61,8 +46,8 @@ If shell commands cannot see the same context key, `task.py current --source` ma
 | --- | --- |
 | Change session-start injected content | The platform's `session-start` hook or plugin file. |
 | Change per-turn workflow-state rules | `[workflow-state:STATUS]` block in `.trellis/workflow.md`. The platform workflow-state hook parses these blocks verbatim and embeds no fallback text. |
-| Change how sub-agents read context | Platform agent definitions, the `inject-subagent-context` hook, or agent preludes. |
+| Change task/spec preparation | `.trellis/workflow.md`, `trellis-before-dev`, and task artifacts. |
 | Change JSONL validation/display | `.trellis/scripts/common/task_context.py`. |
 | Change active task resolution | `.trellis/scripts/common/active_task.py`. |
 
-When modifying context injection, verify two things: new sessions can see the correct task, and sub-agents can see the correct task artifacts/spec/research.
+When modifying context injection, verify two things: new sessions can see the correct task, and the current agent loads the correct task artifacts/spec/research.

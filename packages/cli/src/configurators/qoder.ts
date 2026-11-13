@@ -5,9 +5,8 @@ import {
   wrapWithCommandFrontmatter,
   collectBothTemplates,
   collectSharedHooks,
-  applyPullBasedPreludeMarkdown,
 } from "./shared.js";
-import { getAllAgents, getSettingsTemplate } from "../templates/qoder/index.js";
+import { getSettingsTemplate } from "../templates/qoder/index.js";
 
 /**
  * The Qoder file set — written at init and diffed by `trellis update`.
@@ -29,9 +28,6 @@ export function collectQoderTemplates(): Map<string, string> {
       return wrapWithCommandFrontmatter(name, content);
     },
   );
-  for (const agent of applyPullBasedPreludeMarkdown(getAllAgents())) {
-    files.set(`.qoder/agents/${agent.name}.md`, agent.content);
-  }
   for (const [k, v] of collectSharedHooks(".qoder/hooks", "qoder")) {
     files.set(k, v);
   }

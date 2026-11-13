@@ -11,8 +11,6 @@ The Trellis task system is stored entirely under `.trellis/tasks/` in the user p
 │   ├── prd.md
 │   ├── design.md
 │   ├── implement.md
-│   ├── implement.jsonl
-│   ├── check.jsonl
 │   └── research/
 └── archive/
     └── 2026-04/
@@ -24,8 +22,6 @@ The Trellis task system is stored entirely under `.trellis/tasks/` in the user p
 | `prd.md` | Requirements, constraints, and acceptance criteria. Lightweight tasks may be PRD-only. |
 | `design.md` | Technical design for complex tasks: boundaries, contracts, data flow, compatibility, tradeoffs. |
 | `implement.md` | Execution plan for complex tasks: ordered checklist, validation commands, review gates, rollback points. |
-| `implement.jsonl` | List of spec/research files the implement agent must read first. |
-| `check.jsonl` | List of spec/research files the check agent must read first. |
 | `research/` | Research artifacts. Complex findings should not live only in chat. |
 
 ## `task.json`
@@ -71,7 +67,7 @@ python3 ./.trellis/scripts/task.py remove-subtask <parent-dir> <child-dir>
 
 `children` on the parent is a historical list. When a child is archived, Trellis keeps that child name in the parent so progress like `[2/3 done]` remains meaningful after completed children move to `archive/`.
 
-The AI should not treat phase numbers as task status. Task progress is mainly determined by `status`, artifact presence (`prd.md`, optional `design.md` / `implement.md`), whether JSONL context is configured for sub-agent mode, and the phase descriptions in `workflow.md`.
+The AI should not treat phase numbers as task status. Task progress is mainly determined by `status`, artifact presence (`prd.md`, optional `design.md` / `implement.md`), the phase descriptions in `workflow.md`.
 
 ## Active Task
 
@@ -87,7 +83,7 @@ If the platform or shell environment has no stable session identity, `task.py st
 
 ## JSONL Context
 
-`implement.jsonl` and `check.jsonl` are context manifests for sub-agents to read first. They do not replace `implement.md`; `implement.md` is the human-readable execution plan.
+The current agent loads task artifacts, research, and applicable specs directly. `implement.md` remains the human-readable execution plan.
 
 Format:
 

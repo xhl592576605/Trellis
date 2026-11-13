@@ -22,10 +22,7 @@ Each phase contains numbered steps, such as `1.3 Configure context`. These numbe
 
 ## Skill Routing
 
-`workflow.md` separates routing by platform capability:
-
-- Platforms with sub-agent support: dispatch `trellis-implement` by default for implementation and `trellis-check` for checking.
-- Platforms without sub-agent support: the main session reads skills such as `trellis-before-dev`, then executes directly.
+All platforms use the current agent for research, implementation, and checking. Before implementation, load `trellis-before-dev`; after implementation, load `trellis-check`. Task artifacts and applicable specs/research are read directly.
 
 When changing local AI behavior, update the routing descriptions in `workflow.md` first, then check whether the corresponding platform skill, command, or agent files need to stay in sync.
 
@@ -48,7 +45,7 @@ Hooks choose the right block based on current task status and inject it into the
 | `in_progress` | The task has entered implementation and checking. |
 | `completed` | The task is complete and waiting for wrap-up or archive. |
 
-If the user wants to change policies such as "whether to create a task when there is no task," "when task creation may be skipped," or "whether sub-agents are required," edit these state blocks and the routing table above them.
+If the user wants to change policies such as "whether to create a task when there is no task," "when task creation may be skipped," or "which checks to run," edit these state blocks and the routing table above them.
 
 ## Local Modification Patterns
 

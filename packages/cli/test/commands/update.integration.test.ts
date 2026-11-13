@@ -283,7 +283,7 @@ describe("update() integration", () => {
     ).toBe(true);
     expect(
       fs.existsSync(projectFile(".zcode/agents/trellis-research.md")),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       fs.existsSync(projectFile(".agents/skills/trellis-start/SKILL.md")),
     ).toBe(false);
@@ -305,7 +305,7 @@ describe("update() integration", () => {
     ).toBe(true);
     expect(
       fs.existsSync(projectFile(".zcode/agents/trellis-research.md")),
-    ).toBe(true);
+    ).toBe(false);
     expect(fs.existsSync(projectFile(".agents/skills"))).toBe(false);
   });
 
@@ -459,16 +459,21 @@ describe("update() integration", () => {
     expect(classified.conflict).toHaveLength(0);
     expect(classified.auto).toHaveLength(1);
 
-    await executeMigrations(classified, tmpDir, { force: true, skipAll: false }, currentTemplates);
+    await executeMigrations(
+      classified,
+      tmpDir,
+      { force: true, skipAll: false },
+      currentTemplates,
+    );
 
     // No duplicate/leftover `.pi/skills/` directory should survive.
     expect(fs.existsSync(projectFile(".pi/skills"))).toBe(false);
 
     // `.agents/skills/` must end up with the correct, current, neutral
     // content — not the stale Pi-flavored bytes from the deleted legacy dir.
-    expect(
-      readProjectFile(".agents/skills/trellis-update-spec/SKILL.md"),
-    ).toBe(neutralContent);
+    expect(readProjectFile(".agents/skills/trellis-update-spec/SKILL.md")).toBe(
+      neutralContent,
+    );
   });
 
   it("#2 dry run makes no file changes even when changes exist", async () => {
@@ -880,7 +885,7 @@ describe("update() integration", () => {
     // sub-agent-less platforms are added, and this assertion is about the
     // block surviving the update, not about who is currently in it.
     expect(readProjectFile(PATHS.WORKFLOW_GUIDE_FILE)).toContain(
-      "[codex-inline, Kilo, Antigravity, Devin",
+      "The current agent performs research, implementation, and verification directly.",
     );
     expect(readProjectFile(PATHS.WORKFLOW_GUIDE_FILE)).not.toContain("[Codex]");
 
@@ -1535,6 +1540,31 @@ describe("update() integration", () => {
     ).toBe(false);
   });
 
+  it("retires pristine workflow roles while preserving customized roles and task materials", async () => {
+    await init({ yes: true, force: true, pi: true });
+    const oldRole = fs.readFileSync(
+      path.join(__dirname, "../fixtures/legacy-pi-implement.md"),
+      "utf-8",
+    );
+    const pristine = projectFile(".pi/agents/trellis-implement.md");
+    const customized = projectFile(".pi/agents/trellis-check.md");
+    fs.mkdirSync(path.dirname(pristine), { recursive: true });
+    fs.writeFileSync(pristine, oldRole);
+    fs.writeFileSync(customized, oldRole + "\nUser customization\n");
+    const manifest = projectFile(".trellis/tasks/legacy/implement.jsonl");
+    fs.mkdirSync(path.dirname(manifest), { recursive: true });
+    fs.writeFileSync(manifest, "");
+    await update({ skipAll: true });
+    expect(fs.existsSync(pristine)).toBe(false);
+    expect(fs.readFileSync(customized, "utf-8")).toContain(
+      "User customization",
+    );
+    expect(fs.existsSync(manifest)).toBe(true);
+    expect(
+      fs.existsSync(projectFile(".agents/skills/trellis-check/SKILL.md")),
+    ).toBe(true);
+  });
+
   it("#workflow-md-r4 updates workflow.md as one runtime template when hash-tracked", async () => {
     await setupProject();
 
@@ -1568,12 +1598,10 @@ describe("update() integration", () => {
     const updated = fs.readFileSync(workflowPath, "utf-8");
     expect(updated).toBe(replacePythonCommandLiterals(workflowMdTemplate));
     expect(updated).toContain(
-      "[Gemini, Qoder, Copilot, Reasonix, Trae, Grok, Kimi Code]",
+      "The current agent performs research, implementation, and verification directly.",
     );
-    expect(updated).toContain(
-      "[/Claude Code, Cursor, OpenCode, codex-sub-agent, CodeBuddy, Droid, Pi, ZCode, Snow, Oh My Pi]",
-    );
-    expect(updated).toContain("[codex-inline, Kilo, Antigravity, Devin");
+    expect(updated).toContain("trellis-before-dev");
+    expect(updated).toContain("trellis-check");
     expect(updated).not.toContain("[Codex]");
     expect(updated).not.toContain("[Kilo, Antigravity, Windsurf]");
     expect(updated).not.toContain("legacy body");
