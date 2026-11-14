@@ -12,13 +12,22 @@ Do not default to guiding the user to fork the Trellis CLI repository. Treat ups
 
 ## Local System Model
 
-Trellis provides three layers inside a user project:
+Resolve the checkout `.treills.conf.json` first. In trellis-wiki 0.7+,
+`<storage>/<project>` holds the workflow, config, tasks, specs, journals, and
+scripts; `.trellis` is an optional browse link. Keep the execution cwd at
+the checkout even when reading or invoking scripts in the external data root.
+
+Trellis provides three layers for a user project:
 
 1. **Workflow layer**: `.trellis/workflow.md` defines phases, routing, next actions, and prompt blocks.
 2. **Persistence layer**: `.trellis/tasks/`, `.trellis/spec/`, and `.trellis/workspace/` store tasks, specs, and session memory.
 3. **Platform integration layer**: hooks, settings, agents, skills, commands, prompts, and workflows in platform directories connect the Trellis workflow to different AI tools.
 
-All three layers live inside the user project, so an AI can read and modify them directly.
+Workflow and persistence live in the external local wiki Git repository;
+platform integration files stay in the code checkout. Read and modify each
+within its owning Git repository. Paths below use the logical `.trellis`
+browse spelling; resolve them against the configured data root when the
+link is absent.
 
 ## Core Paths
 

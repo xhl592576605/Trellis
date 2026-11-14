@@ -2419,60 +2419,60 @@ describe("regression: agent-session Trellis update hint", () => {
       "Trellis update available: 0.5.0 → 0.5.9\nRun: trellis update\n0.5.9",
     );
 
-    expect(output).toContain("Trellis update available: 0.5.0 -> 0.5.9");
-    expect(output).toContain("run trellis update");
-    expect(output).not.toContain("run trellis upgrade");
+    expect(output).toContain("trellis-wiki update available: 0.5.0 -> 0.5.9");
+    expect(output).toContain("run trellis-wiki update");
+    expect(output).not.toContain("run trellis-wiki upgrade");
     expect(output).toContain("SESSION CONTEXT");
   });
 
   it("does not show a hint when installed version is equal or newer", () => {
     expect(runContextWithTrellisOutput("0.5.9", "0.5.9")).not.toContain(
-      "Trellis update available",
+      "trellis-wiki update available",
     );
     fs.rmSync(path.join(tmpDir, ".trellis", ".runtime"), {
       recursive: true,
       force: true,
     });
     expect(runContextWithTrellisOutput("0.6.0", "0.5.9")).not.toContain(
-      "Trellis update available",
+      "trellis-wiki update available",
     );
   });
 
   it("silently skips the hint when trellis --version fails or version parsing fails", () => {
     expect(runContextWithTrellisOutput("0.5.0", null)).not.toContain(
-      "Trellis update available",
+      "trellis-wiki update available",
     );
     fs.rmSync(path.join(tmpDir, ".trellis", ".runtime"), {
       recursive: true,
       force: true,
     });
     expect(runContextWithTrellisOutput("not-a-version", "0.5.9")).not.toContain(
-      "Trellis update available",
+      "trellis-wiki update available",
     );
   });
 
   it("does not burn the once-per-session marker when version lookup fails", () => {
     expect(runContextWithTrellisOutput("0.5.0", null)).not.toContain(
-      "Trellis update available",
+      "trellis-wiki update available",
     );
 
     const output = runContextWithTrellisOutput("0.5.0", "0.5.9");
 
-    expect(output).toContain("Trellis update available: 0.5.0 -> 0.5.9");
+    expect(output).toContain("trellis-wiki update available: 0.5.0 -> 0.5.9");
   });
 
   it("uses the final trellis --version token when no update line is present", () => {
     const output = runContextWithTrellisOutput("0.5.0", "0.5.9");
 
-    expect(output).toContain("Trellis update available: 0.5.0 -> 0.5.9");
+    expect(output).toContain("trellis-wiki update available: 0.5.0 -> 0.5.9");
   });
 
   it("only attempts the default text update hint once per session", () => {
     const first = runContextWithTrellisOutput("0.5.0", "0.5.9");
     const second = runContextWithTrellisOutput("0.5.0", "0.5.9");
 
-    expect(first).toContain("Trellis update available: 0.5.0 -> 0.5.9");
-    expect(second).not.toContain("Trellis update available");
+    expect(first).toContain("trellis-wiki update available: 0.5.0 -> 0.5.9");
+    expect(second).not.toContain("trellis-wiki update available");
     expect(
       fs.existsSync(
         path.join(
@@ -4683,7 +4683,7 @@ print(json.dumps({
 
   // ---------------------------------------------------------------------
   // SessionStart update reminder. `_get_update_hint` (now public as
-  // `get_update_hint`) computed "Trellis update available: X -> Y, run trellis
+  // `get_update_hint`) computed "trellis-wiki update available: X -> Y, run trellis-wiki
   // update" for months, but its only caller was `output_text()` — the
   // get_context.py text path. The hook
   // built its own payload and never went through it, so on hook-driven
@@ -4796,7 +4796,7 @@ print(json.dumps({
       // Inside the notice, not merely somewhere in the payload: a hint the
       // assistant is not told to say out loud never reaches the maintainer.
       expect(firstReplyNotice(context)).toContain(
-        "Trellis update available: 0.5.0 -> 0.5.9, run trellis update",
+        "trellis-wiki update available: 0.5.0 -> 0.5.9, run trellis-wiki update",
       );
       expect(firstReplyNotice(context)).toContain(
         "on its own line in that same reply",
@@ -4819,7 +4819,7 @@ print(json.dumps({
       writeProjectFile(path.join(".trellis", ".version"), "0.6.0\n");
       const upToDate = sessionStartContext("update-current", fakeCli);
 
-      expect(baseline).not.toContain("Trellis update available");
+      expect(baseline).not.toContain("trellis-wiki update available");
       expect(firstReplyNotice(upToDate)).toBe(NOTICE_WITHOUT_UPDATE_HINT);
       expect(upToDate).toBe(baseline);
     },
@@ -4837,8 +4837,8 @@ print(json.dumps({
       // SessionStart also fires on clear/compact within the same session.
       const second = sessionStartContext("update-marker", fakeCli);
 
-      expect(first).toContain("Trellis update available: 0.5.0 -> 0.5.9");
-      expect(second).not.toContain("Trellis update available");
+      expect(first).toContain("trellis-wiki update available: 0.5.0 -> 0.5.9");
+      expect(second).not.toContain("trellis-wiki update available");
       expect(trellisCliCallCount()).toBe(1);
       // The marker is keyed by the identity the hook resolved from stdin, not
       // by session_context's TERM_SESSION_ID / ppid fallback — the latter is a
@@ -4867,7 +4867,7 @@ print(json.dumps({
       const afterTimeout = sessionStartContext("update-hang", hanging);
 
       for (const context of [afterFailure, afterTimeout]) {
-        expect(context).not.toContain("Trellis update available");
+        expect(context).not.toContain("trellis-wiki update available");
         expect(context).toContain("<first-reply-notice>");
         expect(context).toContain("<task-status>");
       }
@@ -4887,7 +4887,7 @@ print(json.dumps({
 
     const context = sessionStartContext("update-unreadable");
 
-    expect(context).not.toContain("Trellis update available");
+    expect(context).not.toContain("trellis-wiki update available");
     expect(context).toContain("<first-reply-notice>");
     expect(context).toContain("<task-status>");
   });

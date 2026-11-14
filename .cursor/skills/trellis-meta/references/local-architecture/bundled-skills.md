@@ -26,7 +26,7 @@ The set is discovered at runtime by listing directories under `templates/common/
 | --- | --- |
 | `trellis-meta` | This skill. Explains the local Trellis architecture and customization entry points to an AI working inside a user project. |
 | `trellis-session-insight` | Wraps the `trellis mem` CLI so an AI knows when and how to reach into past Claude Code / Codex / Pi Agent conversation logs. |
-| `trellis-spec-bootstrap` | Platform-neutral workflow for creating or refreshing `/Users/xuhuale/.trellis-wiki/Trellis/spec/` from the real codebase (with optional GitNexus / ABCoder integration). |
+| `trellis-spec-bootstrap` | Platform-neutral workflow for creating or refreshing `/Users/xuhuale/.trellis-wiki/Trellis/spec/` from the real codebase (with optional ABCoder integration). |
 | `trellis-channel` | Capability skill teaching an AI when to reach for `trellis channel` for multi-agent collaboration, forum/thread persistent boards, and dispatcher-wait patterns. |
 
 The list is discovered at runtime, so adding a new directory under `bundled-skills/` is the only step required to register a new skill (see "Adding a New Bundled Skill" below).
@@ -118,7 +118,7 @@ The shape and dispatch wiring are already generic, so adding a skill requires on
 5. **Verify the distribution path** before shipping. Skipping any of these steps has historically caused features to be documented as bundled while the published npm tarball was missing the files:
 
    - Source files exist on the branch being tagged.
-   - `pnpm --filter @mindfoldhq/trellis build` copies the asset into `dist/templates/common/bundled-skills/<skill>/`.
+   - `pnpm --filter trellis-wiki build` copies the asset into `dist/templates/common/bundled-skills/<skill>/`.
    - `npm pack --dry-run --json` includes the expected `dist/**` paths.
    - In a fresh temp project, `trellis init` writes `.claude/skills/<skill>/SKILL.md`, `.agents/skills/<skill>/SKILL.md`, `.zcode/skills/<skill>/SKILL.md`, etc.
    - `/Users/xuhuale/.trellis-wiki/Trellis/.template-hashes.json` lists the generated files.

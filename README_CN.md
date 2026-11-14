@@ -1,174 +1,143 @@
-<p align="center">
-<picture>
-<source srcset="assets/trellis.png" media="(prefers-color-scheme: dark)">
-<source srcset="assets/trellis.png" media="(prefers-color-scheme: light)">
-<img src="assets/trellis.png" alt="Trellis Logo" width="500" style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;">
-</picture>
-</p>
+# trellis-wiki
 
-<p align="center">
-<strong>开箱即用的 AI 编码工程化框架</strong><br/>
-<sub>AI 写代码很快，但它每次会话都从零开始理解项目，记不住你的规范，也记不住团队级别的需求。Trellis 会把规范、任务、记忆沉淀进仓库，让任意 Coding Agent 都按你的工程标准来实践。</sub>
-</p>
+**把规范、任务与会话记忆移出代码仓库的 AI 编码工作流框架——数据保存在你自己的本地 wiki 存储中。**
 
-<p align="center">
-<a href="./README.md">English</a> •
-<a href="https://docs.trytrellis.app/zh">文档</a> •
-<a href="https://docs.trytrellis.app/zh/start/install-and-first-task">快速开始</a> •
-<a href="https://docs.trytrellis.app/zh/advanced/multi-platform">支持平台</a> •
-<a href="https://docs.trytrellis.app/zh/start/real-world-scenarios">使用场景</a>
-</p>
+trellis-wiki 是 [Trellis](https://github.com/mindfold-ai/Trellis) 的 fork（AGPL-3.0-only）。它保留了 Trellis 的工作流——任务头脑风暴、规范注入、工作日志——并把全部工作流数据迁移到外部本地 Git 存储，让任意 Coding Agent 按你的工程标准工作，同时不弄乱源码树。
 
-<p align="center">
-<a href="https://www.npmjs.com/package/@mindfoldhq/trellis"><img src="https://img.shields.io/npm/v/@mindfoldhq/trellis.svg?style=flat-square&color=2563eb" alt="npm version" /></a>
-<a href="https://www.npmjs.com/package/@mindfoldhq/trellis"><img src="https://img.shields.io/npm/dw/@mindfoldhq/trellis?style=flat-square&color=cb3837&label=downloads" alt="npm downloads" /></a>
-<a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-16a34a.svg?style=flat-square" alt="license" /></a>
-<a href="https://github.com/mindfold-ai/Trellis/stargazers"><img src="https://img.shields.io/github/stars/mindfold-ai/Trellis?style=flat-square&color=eab308" alt="stars" /></a>
-<a href="https://docs.trytrellis.app/zh"><img src="https://img.shields.io/badge/docs-trytrellis.app-0f766e?style=flat-square" alt="docs" /></a>
-<a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
-<a href="https://github.com/mindfold-ai/Trellis/issues"><img src="https://img.shields.io/github/issues/mindfold-ai/Trellis?style=flat-square&color=e67e22" alt="open issues" /></a>
-<a href="https://github.com/mindfold-ai/Trellis/pulls"><img src="https://img.shields.io/github/issues-pr/mindfold-ai/Trellis?style=flat-square&color=9b59b6" alt="open PRs" /></a>
-<a href="https://deepwiki.com/mindfold-ai/Trellis"><img src="https://img.shields.io/badge/Ask-DeepWiki-blue?style=flat-square" alt="Ask DeepWiki" /></a>
-<a href="https://chatgpt.com/?q=Explain+the+project+mindfold-ai/Trellis+on+GitHub"><img src="https://img.shields.io/badge/Ask-ChatGPT-74aa9c?style=flat-square&logo=openai&logoColor=white" alt="Ask ChatGPT" /></a>
-</p>
+[English](./README.md)
 
-<p align="center">
-<img src="assets/trellis-demo-zh.gif" alt="Trellis 工作流演示" width="100%">
-</p>
-
-## 为什么用 Trellis？
+## 为什么用 trellis-wiki？
 
 | 能力 | 带来的改变 |
 | --- | --- |
-| **自动注入规范** | 将规范沉淀到 `.trellis/spec/` 之后，Trellis 会在每次会话中按当前任务自动按需注入相关上下文，无需反复说明。 |
-| **任务驱动工作流** | PRD、实现上下文、审查上下文与任务状态统一存放于 `.trellis/tasks/`，AI 开发过程保持结构化、可追溯。 |
-| **项目记忆** | `.trellis/workspace/` 中的工作日志（journal）会保留上一次会话的脉络，因此每次新会话都能基于真实上下文开始。 |
-| **团队共享标准** | Spec 随仓库一同版本化，个人总结出的规则与流程可以直接成为整个团队的基础设施。 |
-| **多平台复用** | 同一套 Trellis 结构覆盖 22 个 AI coding 平台，无需为每个工具单独搭建工作流。 |
+| 外部 wiki 存储 | 任务、规范、日志和脚本存放在 `~/.trellis-wiki`（所有项目共享一个本地 Git 仓库），不再进入代码仓库。 |
+| 定位配置 | 代码仓库只保留一个 `.treills.conf.json` 定位配置和各平台接入；`.trellis` 链接仅用于浏览。 |
+| 清晰的双重 Git 边界 | 代码提交留在代码仓库；任务与日志提交由 finish-work 写入存储仓库。 |
+| 多平台接入 | 同一套工作流可安装到 Claude Code、Codex、Cursor、Pi、OpenCode 等平台——运行 `trellis-wiki init --help` 查看当前支持列表。 |
+| 命令兼容 | `trellis` 与 `tl` 继续可用，`/trellis:*` 命令、skills 和 `TRELLIS_*` 环境变量保持不变。 |
 
 ## 前置要求
 
-- **Node.js** >= 18
-- **Python** >= 3.9
+- Node.js >= 18.17.0
+- Python >= 3.9
 
-## 快速开始
+## 安装
 
 ```bash
-# 1. 安装 Trellis
-npm install -g @mindfoldhq/trellis@latest
-
-# 2. 在仓库中初始化
-trellis init -u your-name
-
-# 3. 或仅初始化你实际使用的平台
-trellis init --cursor --opencode --codex -u your-name
+npm install -g trellis-wiki
 ```
 
-查看 [快速开始](https://docs.trytrellis.app/zh/start/install-and-first-task) 与 [支持平台](https://docs.trytrellis.app/zh/advanced/multi-platform) 指南以了解详细配置步骤。
+> `trellis-wiki` npm 包是本 fork 的正式发布入口。尚未发布期间可本地构建：
+>
+> ```bash
+> git clone https://github.com/xhl592576605/Trellis.git
+> cd Trellis && pnpm install && pnpm build
+> node packages/cli/bin/trellis.js --version   # 0.7.0
+> ```
 
-## 如何使用
+## 初始化项目
 
-使用流程非常简单：
+```bash
+# 选择你实际使用的 AI 平台
+trellis-wiki init --pi --codex
 
-1. **用自然语言描述你的需求。**
-2. **与 AI 一起头脑风暴**，一次只回答一个问题，直到 PRD 足够清晰，然后开始实现。
-3. **交由 AI 自主推进** —— AI 会调用 `trellis-implement` 编写代码，并自动依据 Spec、lint、type-check 与测试进行校验。
-4. **当工作完成或会话上下文接近上限时，输入 `/trellis:finish-work`**。Trellis 会归档任务并更新工作日志。
+# 外部存储为默认模式（存储根目录默认 ~/.trellis-wiki）
+trellis-wiki init --pi --storage ~/my-wiki --project my-project
+```
 
-## 工作原理
+无需注册开发者身份。初始化后会创建：
 
-Trellis 内部运行一个 4 阶段循环，skill 与子代理均由系统自动调用：
+```text
+your-code-repo/
+├── .treills.conf.json      # 定位配置: { "storage": "~/.trellis-wiki", "project": "my-project" }
+├── .trellis -> ~/.trellis-wiki/my-project/   # 仅浏览用链接（可删除）
+├── .pi/  .codex/ …         # 平台接入（hooks、skills、commands）
 
-1. **Plan（规划）** —— `trellis-brainstorm` 逐题梳理需求并写入 `prd.md`；涉及资料调研的部分派发给 `trellis-research` 子代理处理。阶段产出为一组精选的 Spec 与研究文件，由 `implement.jsonl` / `check.jsonl` 编排。
-2. **Implement（实现）** —— `trellis-implement` 子代理依据 PRD 编写代码，所需上下文已按 `implement.jsonl` 自动注入，不会执行 git commit。
-3. **Verify（验证）** —— `trellis-check` 子代理基于 diff 对照 Spec 逐项核查，并运行 lint、type-check 与测试，在能力范围内自动修复。
-4. **Finish（收尾）** —— 执行最终检查后，`trellis-update-spec` 将本轮新增的认知沉淀回 `.trellis/spec/`，为下一次会话积累上下文。
+~/.trellis-wiki/            # 所有项目共享的本地 Git 仓库
+└── my-project/
+    ├── tasks/  spec/  workspace/   # PRD、规范、日志
+    ├── scripts/  config.yaml  project.json
+```
 
-## 资源
+运行时始终先读取 `.treills.conf.json` 解析真实目录——`.trellis` 链接不是执行的前提。
 
-| 需求 | 链接 |
+## 日常工作流
+
+1. 用自然语言描述需求；AI 与你一起规划任务（一次一个问题），并把 PRD 写入存储。
+2. 实现与质量检查对照你的规范、lint、type-check 和测试执行。
+3. 输入 `/trellis:finish-work` 收尾：任务归档、日志提交——写入**存储仓库**且仅限本任务范围。代码变更照常提交到代码仓库。
+
+## 从 @mindfoldhq/trellis 切换
+
+切换 npm 包与迁移项目数据是两个独立步骤。
+
+**1. 更换全局 CLI**（不要为此运行项目级 `uninstall`——那会移除平台接入）：
+
+```bash
+npm uninstall -g @mindfoldhq/trellis
+npm install -g trellis-wiki
+trellis-wiki --version && trellis --version && tl --version   # 均为 0.7.0
+```
+
+**2. 迁移旧的仓库内 `.trellis`：**
+
+```bash
+trellis-wiki update --migrate-storage --dry-run     # 预览，不写入
+trellis-wiki update --migrate-storage               # 复制 + 校验 + 切换
+```
+
+- 可选参数：`--storage <dir>`、`--project <name>`；仅当旧 workspace 有多个开发者目录且无 `.developer` 时才需要 `--workspace <name>`。
+- 原 `.trellis` 会保留为 `.trellis.pre-migration.<timestamp>/`——这是你的恢复副本，确认无误后可自行删除。
+- 中断后重新执行同一命令即可从持久化检查点续跑。
+- 迁移不会提交你的代码仓库；相关删除变更请自行提交。
+
+已经在外部存储上的项目无需再次迁移——直接运行 `trellis-wiki update`，现有存储目录、绑定与数据原样复用。
+
+## 兼容性说明
+
+- 命令：`trellis-wiki`（主命令），`trellis` 与 `tl`（别名）运行同一 CLI。
+- AI 入口：`/trellis:*` 斜杠命令、`trellis-*` skills、`TRELLIS_*` 环境变量与 `.trellis` 浏览路径保持不变。
+- SDK 使用方：core 包更名为 `trellis-wiki-core`，请更新依赖名与 import：
+
+```ts
+import { createChannel } from "trellis-wiki-core/channel";
+import { searchMemSessions } from "trellis-wiki-core/mem";
+```
+
+旧 `@mindfoldhq` scope 下没有重定向包。
+
+## upgrade 与 update 的区别
+
+- `trellis-wiki upgrade` —— 升级全局安装的 CLI（执行 `npm install -g trellis-wiki@<tag>`）。
+- `trellis-wiki update` —— 刷新项目模板、hooks 与平台接入并应用文件迁移。跨越 0.7.0 的旧仓库内布局会被拒绝，直到执行 `--migrate-storage`。
+
+## 卸载与数据保留
+
+`trellis-wiki uninstall` 移除当前 checkout 的平台接入、管理块、定位配置和浏览链接。它不会删除外部存储——任务、规范与日志在卸载和重装后依然保留。
+
+## 本地开发
+
+```bash
+pnpm install
+pnpm build          # 先 trellis-wiki-core 后 trellis-wiki
+pnpm test           # core + cli 测试套件
+pnpm lint && pnpm typecheck
+node packages/cli/scripts/release-preflight.js check-versions
+node packages/cli/scripts/release-preflight.js verify-packed-cli
+```
+
+| 包 | 职责 |
 | --- | --- |
-| 在仓库中安装 Trellis | [快速开始](https://docs.trytrellis.app/zh/start/install-and-first-task) |
-| 了解各平台之间的差异 | [支持平台](https://docs.trytrellis.app/zh/advanced/multi-platform) |
-| 查看实际使用场景 | [真实场景](https://docs.trytrellis.app/zh/start/real-world-scenarios) |
-| 从 Spec 模板起步 | [Spec 模板](https://docs.trytrellis.app/zh/templates/specs-index) |
-| 跟进版本更新 | [更新日志](https://docs.trytrellis.app/zh/changelog) |
+| `packages/cli`（`trellis-wiki`） | CLI 命令、平台配置器、模板、迁移与发布脚本。 |
+| `packages/core`（`trellis-wiki-core`） | channel/task/mem 领域 SDK，提供 `/channel`、`/mem`、`/task`、`/testing` 子路径导出。 |
 
-## 常见问题
+发布仅通过 CI（先 core 后 CLI，一个 git tag 对应一个版本）；见 `.trellis/spec/cli/backend/release-process.md`。
 
-<details>
-<summary><strong>Trellis 与 <code>CLAUDE.md</code>、<code>AGENTS.md</code>、<code>.cursorrules</code> 有何区别？</strong></summary>
+## 路线图（TODO）
 
-这些文件本身是有用的入口，但容易在长期使用中变得冗长臃肿。Trellis 在此之上补充了：作用域明确的 Spec、按任务划分的 PRD、工作流关卡、工作区记忆，以及按平台自动生成的适配文件。
+- [ ] **UI 开发细化**：基于本地数据的 Web UI——任务看板（状态/负责人视图）、channel 会话列表与事件时间线、mem 召回结果浏览、update/迁移状态面板。先做只读本地版，不引入云端服务。
+- [ ] **Bug 处理流程**：报告 → 复现 → 定位（mem / channel 日志）→ 修复 → 回归测试 → 规范沉淀（`trellis-break-loop`）的标准闭环，以及本 fork 的 issue 分诊约定。
 
-</details>
+## 来源与许可
 
-<details>
-<summary><strong>Trellis 是否仅支持 Claude Code？</strong></summary>
-
-并非如此。Trellis 是项目层基础设施，可在多种 coding agent 与 IDE 中使用。
-
-</details>
-
-<details>
-<summary><strong>Trellis 适合个人开发者还是团队？</strong></summary>
-
-两者皆可。个人开发者主要受益于记忆机制与可复用的工作流；团队使用收益更大——标准统一、任务边界清晰、上下文可审查，且具备跨平台可移植性。
-
-</details>
-
-<details>
-<summary><strong>是否需要手动编写每一个 Spec 文件？</strong></summary>
-
-并不需要。多数团队的做法是先由 AI 基于现有代码生成初稿，再人工收紧关键规则。Trellis 的效果取决于是否将高价值规则显式化并纳入版本管理。
-
-</details>
-
-<details>
-<summary><strong>团队协作时是否会频繁产生冲突？</strong></summary>
-
-不会。个人工作区的 journal 按开发者独立维护，共享的 Spec 与任务则进入仓库，可以像其他项目产物一样进行评审与改进。
-
-</details>
-
-<details>
-<summary><strong>可以临时对比启用与关闭 Trellis 的项目表现吗？</strong></summary>
-
-可以。`trellis ablate` 会先在项目外创建并验证恢复事务，然后临时移除
-Trellis 管理的全部项目级表面。请新开一个 agent 会话进行对比；完成后运行
-`trellis restore`，即可精确恢复到消融前的状态。两个命令都支持
-`--dry-run` 预览。
-私有恢复事务会包含 `.trellis` 中 task、spec 和 workspace 的精确字节，
-其中可能有用户编写的敏感文本；事务会保留到恢复完成验证为止。
-
-它不同于永久删除的 `trellis uninstall`，也不同于只关闭 hooks 的
-`TRELLIS_HOOKS=0`。消融不会启动 agent、管理 worktree、隐藏 Git 变更，
-也不会删除全局 CLI、channel 日志或宿主会话记录。如果消融期间某个受管理
-路径被修改，恢复会拒绝全部写入，直到冲突被处理。
-
-</details>
-
-## Star 历史
-
-[![Star History Chart](https://star-history.dera.page/svg?repos=mindfold-ai/Trellis&type=Date)](https://star-history.dera.page/#mindfold-ai/Trellis&Date)
-
-## 社区与资源
-
-- [官方文档](https://docs.trytrellis.app/zh)
-- [GitHub Issues](https://github.com/mindfold-ai/Trellis/issues)
-- [Discord](https://discord.com/invite/tWcCZ3aRHc)
-- [技术博客](https://docs.trytrellis.app/zh/blog)
-
-### 联系我们
-
-<p align="center">
-<img src="assets/wx_link11.jpg" alt="微信群" width="260" />
-&nbsp;&nbsp;&nbsp;&nbsp;
-<img src="assets/feishu-group-qr.jpg" alt="飞书话题群" width="260" />
-</p>
-
-<p align="center">
-<a href="https://github.com/mindfold-ai/Trellis">官方仓库</a> •
-<a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE">AGPL-3.0 License</a> •
-由 <a href="https://github.com/mindfold-ai">Mindfold</a> 构建
-</p>
+trellis-wiki 维护于 [xhl592576605/Trellis](https://github.com/xhl592576605/Trellis)。它是 Mindfold [Trellis](https://github.com/mindfold-ai/Trellis) 的 fork——保留原始理念、代码与 AGPL-3.0-only 许可证。见 [LICENSE](./LICENSE)。

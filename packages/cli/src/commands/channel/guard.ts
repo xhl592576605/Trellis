@@ -21,7 +21,7 @@ import {
   reduceWorkerRegistry,
   type ChannelEvent,
   type WorkerState,
-} from "@mindfoldhq/trellis-core/channel";
+} from "trellis-wiki-core/channel";
 
 import { resolveWorkflowDir } from "../../utils/external-store.js";
 

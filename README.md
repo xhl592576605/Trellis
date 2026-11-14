@@ -1,168 +1,143 @@
-<p align="center">
-<picture>
-<source srcset="assets/trellis.png" media="(prefers-color-scheme: dark)">
-<source srcset="assets/trellis.png" media="(prefers-color-scheme: light)">
-<img src="assets/trellis.png" alt="Trellis Logo" width="500" style="image-rendering: -webkit-optimize-contrast; image-rendering: crisp-edges;">
-</picture>
-</p>
+# trellis-wiki
 
-<p align="center">
-<strong>An out-of-the-box engineering framework for AI coding.</strong><br/>
-<sub>AI writes code fast, but every session it starts from scratch — no memory of your project, your conventions, or your team's requirements. Trellis persists specs, tasks, and memory into your repo, so any coding agent works to your engineering standards.</sub>
-</p>
+**An AI coding workflow framework that keeps specs, tasks, and session memory out of your code repository — in a local wiki store you own.**
 
-<p align="center">
-<a href="./README_CN.md">简体中文</a> •
-<a href="https://docs.trytrellis.app/">Docs</a> •
-<a href="https://docs.trytrellis.app/start/install-and-first-task">Quick Start</a> •
-<a href="https://docs.trytrellis.app/advanced/multi-platform">Supported Platforms</a> •
-<a href="https://docs.trytrellis.app/start/real-world-scenarios">Use Cases</a>
-</p>
+trellis-wiki is a fork of [Trellis](https://github.com/mindfold-ai/Trellis) (AGPL-3.0-only). It preserves the Trellis workflow — brainstorm-driven tasks, spec injection, journals — and moves all workflow data into an external local Git store, so any coding agent works to your engineering standards without cluttering your source tree.
 
-<p align="center">
-<a href="https://www.npmjs.com/package/@mindfoldhq/trellis"><img src="https://img.shields.io/npm/v/@mindfoldhq/trellis.svg?style=flat-square&color=2563eb" alt="npm version" /></a>
-<a href="https://www.npmjs.com/package/@mindfoldhq/trellis"><img src="https://img.shields.io/npm/dw/@mindfoldhq/trellis?style=flat-square&color=cb3837&label=downloads" alt="npm downloads" /></a>
-<a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-16a34a.svg?style=flat-square" alt="license" /></a>
-<a href="https://github.com/mindfold-ai/Trellis/stargazers"><img src="https://img.shields.io/github/stars/mindfold-ai/Trellis?style=flat-square&color=eab308" alt="stars" /></a>
-<a href="https://docs.trytrellis.app/"><img src="https://img.shields.io/badge/docs-trytrellis.app-0f766e?style=flat-square" alt="docs" /></a>
-<a href="https://discord.com/invite/tWcCZ3aRHc"><img src="https://img.shields.io/badge/Discord-Join-5865F2?style=flat-square&logo=discord&logoColor=white" alt="Discord" /></a>
-<a href="https://github.com/mindfold-ai/Trellis/issues"><img src="https://img.shields.io/github/issues/mindfold-ai/Trellis?style=flat-square&color=e67e22" alt="open issues" /></a>
-<a href="https://github.com/mindfold-ai/Trellis/pulls"><img src="https://img.shields.io/github/issues-pr/mindfold-ai/Trellis?style=flat-square&color=9b59b6" alt="open PRs" /></a>
-<a href="https://deepwiki.com/mindfold-ai/Trellis"><img src="https://img.shields.io/badge/Ask-DeepWiki-blue?style=flat-square" alt="Ask DeepWiki" /></a>
-<a href="https://chatgpt.com/?q=Explain+the+project+mindfold-ai/Trellis+on+GitHub"><img src="https://img.shields.io/badge/Ask-ChatGPT-74aa9c?style=flat-square&logo=openai&logoColor=white" alt="Ask ChatGPT" /></a>
-</p>
+[简体中文](./README_CN.md)
 
-<p align="center">
-<img src="assets/trellis-demo.gif" alt="Trellis workflow demo" width="100%">
-</p>
-
-## Why Trellis?
+## Why trellis-wiki?
 
 | Capability | What it changes |
 | --- | --- |
-| **Auto-injected specs** | Write conventions once in `.trellis/spec/`, then let Trellis inject the relevant context into each session instead of repeating yourself. |
-| **Task-centered workflow** | Keep PRDs, implementation context, review context, and task status in `.trellis/tasks/` so AI work stays structured. |
-| **Project memory** | Journals in `.trellis/workspace/` preserve what happened last time, so each new session starts with real context. |
-| **Team-shared standards** | Specs live in the repo, so one person's hard-won workflow or rule can benefit the whole team. |
-| **Multi-platform setup** | Bring the same Trellis structure to 22 AI coding platforms instead of rebuilding your workflow per tool. |
+| External wiki store | Tasks, specs, journals, and scripts live in `~/.trellis-wiki` (one local Git repository shared by all projects), not inside your code repo. |
+| Locator config | The code repository keeps a single `.treills.conf.json` locator plus per-platform wiring; a `.trellis` link remains for browsing only. |
+| Two clean Git boundaries | Code commits stay in your code repository; task/journal commits land in the storage repository via finish-work. |
+| Multi-platform wiring | The same workflow installs into Claude Code, Codex, Cursor, Pi, OpenCode, and more — run `trellis-wiki init --help` for the current platform list. |
+| Compatible commands | `trellis` and `tl` keep working, along with `/trellis:*` commands, skills, and `TRELLIS_*` environment variables. |
 
-## Prerequisites:
+## Prerequisites
 
-- **Node.js** >= 18
-- **Python** >= 3.9
+- Node.js >= 18.17.0
+- Python >= 3.9
 
-## Quick Start
+## Install
 
 ```bash
-# 1. Install Trellis
-npm install -g @mindfoldhq/trellis@latest
-
-# 2. Initialize in your repo
-trellis init -u your-name
-
-# 3. Or initialize with the platforms you actually use
-trellis init --cursor --opencode --codex -u your-name
+npm install -g trellis-wiki
 ```
 
-See the [Quick Start](https://docs.trytrellis.app/start/install-and-first-task) and [Supported Platforms](https://docs.trytrellis.app/advanced/multi-platform) guides for setup details.
+> The `trellis-wiki` npm package is the published entry point of this fork. Until it is published, build and install locally:
+>
+> ```bash
+> git clone https://github.com/xhl592576605/Trellis.git
+> cd Trellis && pnpm install && pnpm build
+> node packages/cli/bin/trellis.js --version   # 0.7.0
+> ```
 
-## How to Use
+## Initialize a project
 
-The workflow is simple:
+```bash
+# pick the AI platforms you actually use
+trellis-wiki init --pi --codex
 
-1. **Describe what you want** in natural language.
-2. **Brainstorm** with the AI one question at a time until the PRD is clear, then implementation begins.
-3. **Let it run** — the AI calls Trellis Implement and auto-checks the result against specs, lint, type-check, and tests.
-4. **Type `/trellis:finish-work`** when the work is done or the session context fills up. Trellis archives the task and updates journals.
+# external storage is the default mode (store root defaults to ~/.trellis-wiki)
+trellis-wiki init --pi --storage ~/my-wiki --project my-project
+```
 
-## How It Works
+No developer registration is required. Initialization creates:
 
-Trellis runs a 4-phase loop with auto-invoked skills and sub-agents:
+```text
+your-code-repo/
+├── .treills.conf.json      # locator: { "storage": "~/.trellis-wiki", "project": "my-project" }
+├── .trellis -> ~/.trellis-wiki/my-project/   # browse-only link (safe to delete)
+├── .pi/  .codex/ …         # platform wiring (hooks, skills, commands)
 
-1. **Plan** — `trellis-brainstorm` walks through requirements one question at a time and writes `prd.md`. Research-heavy items go to a `trellis-research` sub-agent. The result is curated specs + research files referenced from `implement.jsonl` / `check.jsonl`.
-2. **Implement** — a `trellis-implement` sub-agent writes code from the PRD with the curated context auto-injected, no git commit.
-3. **Verify** — a `trellis-check` sub-agent reviews the diff against specs and runs lint, type-check, and tests, self-fixing where it can.
-4. **Finish** — a final check runs, then `trellis-update-spec` promotes new learnings back into `.trellis/spec/` so the next session starts smarter.
+~/.trellis-wiki/            # one local Git repository for all projects
+└── my-project/
+    ├── tasks/  spec/  workspace/   # PRDs, guidelines, journals
+    ├── scripts/  config.yaml  project.json
+```
 
-## Resources
+Runtime resolution always reads `.treills.conf.json` first — the `.trellis` link is never required for execution.
 
-| Need                            | Link                                                                           |
-| ------------------------------- | ------------------------------------------------------------------------------ |
-| Install Trellis in a repo       | [Quick Start](https://docs.trytrellis.app/start/install-and-first-task)        |
-| Understand platform differences | [Supported Platforms](https://docs.trytrellis.app/advanced/multi-platform)     |
-| See the workflow in practice    | [Real-World Scenarios](https://docs.trytrellis.app/start/real-world-scenarios) |
-| Start from spec templates       | [Spec Templates](https://docs.trytrellis.app/templates/specs-index)            |
-| Track releases                  | [Changelog](https://docs.trytrellis.app/changelog)                             |
+## Daily workflow
 
-## FAQ
+1. Describe what you want in natural language; the AI plans the task with you (one question at a time) and writes a PRD into the store.
+2. Implementation and quality checks run against your specs, lint, type-check, and tests.
+3. Finish with `/trellis:finish-work`: the task is archived and the journal is committed — in the **storage** repository, scoped to this task. Code changes are committed in your code repository as usual.
 
-<details>
-<summary><strong>How is Trellis different from <code>CLAUDE.md</code>, <code>AGENTS.md</code>, or <code>.cursorrules</code>?</strong></summary>
+## Switch from @mindfoldhq/trellis
 
-Those files are useful entry points, but they tend to become monolithic. Trellis adds scoped specs, task PRDs, workflow gates, workspace memory, and platform-aware generated files around them.
+Switching the npm package and migrating project data are two separate steps.
 
-</details>
+**1. Swap the global CLI** (do not run project `uninstall` for this — it removes platform wiring):
 
-<details>
-<summary><strong>Is Trellis only for Claude Code?</strong></summary>
+```bash
+npm uninstall -g @mindfoldhq/trellis
+npm install -g trellis-wiki
+trellis-wiki --version && trellis --version && tl --version   # all 0.7.0
+```
 
-No. Trellis is a project layer that works across multiple coding agents and IDEs.
+**2. Migrate a legacy in-repo `.trellis`:**
 
-</details>
+```bash
+trellis-wiki update --migrate-storage --dry-run     # preview, no writes
+trellis-wiki update --migrate-storage               # copy + verify + switch
+```
 
-<details>
-<summary><strong>Is Trellis for solo developers or teams?</strong></summary>
+- Options: `--storage <dir>`, `--project <name>`; add `--workspace <name>` only when the old workspace has multiple developer directories and no `.developer`.
+- The original `.trellis` is preserved as `.trellis.pre-migration.<timestamp>/` — your recovery copy; delete it at your leisure.
+- Interrupted runs resume from a persisted checkpoint by re-running the same command.
+- The migration never commits your code repository; commit the resulting deletions yourself.
 
-Both. Solo developers use it for memory and repeatable workflow. Teams get the larger benefit: shared standards, task boundaries, reviewable context, and platform portability.
+Projects already on the external store need no re-migration — just run `trellis-wiki update`; existing storage directories, bindings, and data are reused as-is.
 
-</details>
+## Compatibility notes
 
-<details>
-<summary><strong>Do I have to write every spec file manually?</strong></summary>
+- Commands: `trellis-wiki` (primary), `trellis` and `tl` (aliases) run the same CLI.
+- AI surface: `/trellis:*` slash commands, `trellis-*` skills, `TRELLIS_*` environment variables, and the `.trellis` browse path are unchanged.
+- SDK consumers: the core package is now `trellis-wiki-core`. Update your dependency and imports:
 
-No. Many teams start by letting AI draft specs from existing code and then tighten the important parts by hand. Trellis works best when you keep the high-signal rules explicit and versioned.
+```ts
+import { createChannel } from "trellis-wiki-core/channel";
+import { searchMemSessions } from "trellis-wiki-core/mem";
+```
 
-</details>
+There is no redirect package under the old `@mindfoldhq` scope.
 
-<details>
-<summary><strong>Can teams use this without constant conflicts?</strong></summary>
+## Upgrade vs update
 
-Yes. Personal workspace journals stay separate per developer, while shared specs and tasks stay in the repo where they can be reviewed and improved like any other project artifact.
+- `trellis-wiki upgrade` — upgrade the globally installed CLI (`npm install -g trellis-wiki@<tag>`).
+- `trellis-wiki update` — refresh a project's templates, hooks, and platform wiring; applies file migrations. A legacy in-repo layout crossing 0.7.0 is refused until you run `--migrate-storage`.
 
-</details>
+## Uninstall and data retention
 
-<details>
-<summary><strong>Can I temporarily compare a project with and without Trellis?</strong></summary>
+`trellis-wiki uninstall` removes this checkout's platform wiring, managed blocks, locator config, and browse link. It never deletes the external store — tasks, specs, and journals survive uninstalling and re-installing.
 
-Yes. `trellis ablate` temporarily removes all supported project-owned Trellis
-surfaces after creating a verified recovery transaction outside the project.
-Start a fresh agent session for the comparison, then run `trellis restore` to
-recover the exact prior state. Use `--dry-run` to preview either operation.
-The private recovery transaction includes exact `.trellis` task, spec, and
-workspace bytes, which may contain user-authored sensitive text, and is kept
-until restore verifies successfully.
+## Local development
 
-This is different from `trellis uninstall` (permanent removal) and
-`TRELLIS_HOOKS=0` (hooks only). Ablation does not launch agents, manage
-worktrees, hide Git changes, or remove the global CLI, channel logs, or host
-transcripts. If a managed path changes while ablated, restore refuses all
-writes until the conflict is resolved.
+```bash
+pnpm install
+pnpm build          # trellis-wiki-core then trellis-wiki
+pnpm test           # core + cli suites
+pnpm lint && pnpm typecheck
+node packages/cli/scripts/release-preflight.js check-versions
+node packages/cli/scripts/release-preflight.js verify-packed-cli
+```
 
-</details>
+| Package | Role |
+| --- | --- |
+| `packages/cli` (`trellis-wiki`) | CLI commands, platform configurators, templates, migrations, release scripts. |
+| `packages/core` (`trellis-wiki-core`) | Channel/task/mem domain SDK with `/channel`, `/mem`, `/task`, `/testing` subpath exports. |
 
-## Star History
+Publishing is CI-only (core first, then CLI, one version per git tag); see `.trellis/spec/cli/backend/release-process.md`.
 
-[![Star History Chart](https://star-history.dera.page/svg?repos=mindfold-ai/Trellis&type=Date)](https://star-history.dera.page/#mindfold-ai/Trellis&Date)
+## Roadmap (TODO)
 
-## Community & Resources
+- [ ] **Detailed UI development**: a web UI on top of the local data — task board with status/owner views, channel thread list with event timelines, mem recall browsing, and update/migration status panels. Read-only local mode first; no cloud service.
+- [ ] **Bug handling workflow**: a standard loop from report → reproduce → locate (mem / channel logs) → fix → regression test → spec capture (`trellis-break-loop`), plus issue triage expectations for this fork.
 
-- [Official Docs](https://docs.trytrellis.app/)
-- [GitHub Issues](https://github.com/mindfold-ai/Trellis/issues)
-- [Discord](https://discord.com/invite/tWcCZ3aRHc)
-- [Tech Blog](https://docs.trytrellis.app/blog)
+## Source and license
 
-<p align="center">
-<a href="https://github.com/mindfold-ai/Trellis">Official Repository</a> •
-<a href="https://github.com/mindfold-ai/Trellis/blob/main/LICENSE">AGPL-3.0 License</a> •
-Built by <a href="https://github.com/mindfold-ai">Mindfold</a>
-</p>
+trellis-wiki is maintained at [xhl592576605/Trellis](https://github.com/xhl592576605/Trellis). It is a fork of [Trellis](https://github.com/mindfold-ai/Trellis) by Mindfold — original concept, code, and AGPL-3.0-only license retained. See [LICENSE](./LICENSE).

@@ -1,3 +1,5 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Progress And Debugging
 
 Pretty output is for operators. Raw output is the audit log. Subcommands
@@ -194,7 +196,7 @@ diffing against `<worker>.inbox-cursor` while debugging the supervisor.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `trellis: command not found` | CLI not installed globally | `npm install -g @mindfoldhq/trellis` |
+| `trellis: command not found` | CLI not installed globally | `npm install -g trellis-wiki` |
 | `wait` exits immediately | wrong filter or identity collision | use distinct `--as`, inspect raw messages |
 | zsh errors on message text | shell interpreted punctuation | use `--stdin` or `--text-file` |
 | progress line is cut off | pretty output truncation | use `messages --raw --kind progress` |

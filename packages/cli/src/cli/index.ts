@@ -38,10 +38,10 @@ function checkForUpdates(cwd: string): void {
     // CLI is newer than project - update available
     console.log(
       chalk.yellow(
-        `\n⚠️  Trellis update available: ${projectVersion} → ${cliVersion}`,
+        `\n⚠️  trellis-wiki update available: ${projectVersion} → ${cliVersion}`,
       ),
     );
-    console.log(chalk.gray(`   Run: trellis update\n`));
+    console.log(chalk.gray(`   Run: trellis-wiki update\n`));
   } else if (comparison < 0) {
     // CLI is older than project - CLI needs updating
     console.log(
@@ -49,7 +49,7 @@ function checkForUpdates(cwd: string): void {
         `\n⚠️  Your CLI (${cliVersion}) is older than project (${projectVersion})`,
       ),
     );
-    console.log(chalk.gray(`   Run: trellis upgrade\n`));
+    console.log(chalk.gray(`   Run: trellis-wiki upgrade\n`));
   }
 }
 
@@ -62,7 +62,7 @@ if (fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW))) {
 const program = new Command();
 
 program
-  .name("trellis")
+  .name("trellis-wiki")
   .description(
     "AI-assisted development workflow framework for Cursor, Claude Code and more",
   )
@@ -70,7 +70,7 @@ program
 
 program
   .command("init")
-  .description("Initialize trellis in the current project")
+  .description("Initialize trellis-wiki in the current project")
   .option("--cursor", "Include Cursor commands")
   .option("--claude", "Include Claude Code commands")
   .option("--opencode", "Include OpenCode commands")
@@ -164,7 +164,9 @@ program
 
 program
   .command("update")
-  .description("Update trellis configuration and commands to latest version")
+  .description(
+    "Update trellis-wiki configuration and commands to latest version",
+  )
   .option("--dry-run", "Preview changes without applying them")
   .option("-f, --force", "Overwrite all changed files without asking")
   .option("-s, --skip-all", "Skip all changed files without asking")
@@ -215,7 +217,7 @@ program
 
 program
   .command("upgrade")
-  .description("Upgrade the global Trellis CLI package")
+  .description("Upgrade the global trellis-wiki CLI package")
   .option(
     "--tag <tag>",
     "npm dist-tag or version to install (default follows current channel: latest, beta, or rc)",

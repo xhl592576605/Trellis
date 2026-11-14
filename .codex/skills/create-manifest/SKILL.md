@@ -1,6 +1,6 @@
 ---
 name: create-manifest
-description: "Create a Trellis migration manifest and matching docs-site changelogs for a target release by analyzing commits since the previous release. Use when preparing a patch, beta, rc, or minor release manifest."
+description: "Create a trellis-wiki migration manifest and local release notes for a target release by analyzing commits since the previous release. Use when preparing a patch, beta, rc, or minor release manifest."
 ---
 
 # Create Migration Manifest
@@ -15,8 +15,8 @@ Create a migration manifest for a new patch, beta, rc, or minor release based on
 
 Trellis currently publishes two npm packages from the same git tag:
 
-- `@mindfoldhq/trellis`
-- `@mindfoldhq/trellis-core`
+- `trellis-wiki`
+- `trellis-wiki-core`
 
 Both packages must always share the exact same version and npm dist-tag. Source uses `workspace:*`; the packed CLI must depend on the exact published core version.
 
@@ -56,14 +56,13 @@ Drop pure spec edits, mechanical refactors, and internal-only cleanup unless the
 
 ## Step 4: Draft Changelog
 
-Voice: technical reference doc. Short, clear, plain. Not a story, not a sales pitch. Follow `.trellis/spec/docs-site/docs/style-guide.md` -> "Changelog / Release Notes Voice".
+Voice: technical reference doc. Short, clear, plain. Not a story, not a sales pitch.
 
 Do:
 
 - Lead each `###` section with one sentence stating what changed. Then table, code, or bullets. Done.
 - Use feature names as headings, for example `### Joiner onboarding task`.
 - Include grep-able identifiers: file paths, function names, flag names, migration entries.
-- Mirror English and Chinese 1:1 in docs-site changelogs: same sections, same tables, same code blocks; only prose translated.
 
 Do not:
 
@@ -88,7 +87,7 @@ Manifest `changelog` field:
 
 - Use one string with real `\n` separators.
 - Group with bold prefixes: `**Enhancements:**`, `**Bug Fixes:**`, `**Internal:**`.
-- Keep it shorter than the MDX changelog because it prints in terminal during `trellis update`.
+- The changelog prints in the terminal during `trellis-wiki update`; it is the release note itself (no separate docs site).
 
 ## Step 5: Determine Manifest Fields
 
@@ -142,51 +141,22 @@ EOF
 
 For breaking releases with many rename entries, generate the entries with a small temporary Node script and pipe the final JSON into `create-manifest.js`.
 
-## Step 7: Create Docs-Site Changelogs
+## Step 7: Release Notes Live in the Manifest
 
-This step is mandatory for every release.
+The manifest changelog/description ARE the user-facing release notes; there is no docs site. Before releasing, the local gate validates completeness:
 
-Create both files:
-
-1. `docs-site/changelog/v<version>.mdx`
-2. `docs-site/zh/changelog/v<version>.mdx`
-
-Use the format from recent changelog files. English and Chinese structure must match 1:1.
-
-Update `docs-site/docs.json`:
-
-- Add `"changelog/v<version>"` to the English changelog pages list at the top.
-- Add `"zh/changelog/v<version>"` to the Chinese changelog pages list at the top.
-- Update navbar changelog links to the new version.
-
-When a `<Note>` or `<Warning>` block contains a markdown list, the closing tag must start at column 0:
-
-```mdx
-<Note>
-- bullet
-</Note>
+```bash
+node packages/cli/scripts/check-release-manifest.js --type <beta|rc|promote>
 ```
 
-## Step 8: Docs Lifecycle
-
-The docs-site root path is stable. Development cycles live under `beta/` or `rc/`.
-
-| Transition | Script | When |
-|---|---|---|
-| Start a new beta | `docs-site/scripts/docs-beta-start.sh` | Before the first beta of a new minor/major, for example `0.6.0-beta.0`. |
-| Beta to RC | `docs-site/scripts/docs-beta-to-rc.sh` | Before the first rc, for example `0.6.0-rc.0`. |
-| RC to GA | `docs-site/scripts/docs-promote.sh` | Before `pnpm release:promote`. |
-
-Per-patch releases (`-beta.1`, `-rc.1`, `0.5.1`) do not run lifecycle scripts. Write changelog MDX, update `docs.json`, commit/push docs-site, then bump the main repo submodule pointer.
-
-Full reference: `.trellis/spec/docs-site/docs/release-lifecycle.md`.
+It checks that `packages/cli/src/migrations/manifests/<target>.json` exists and has: matching `version`, non-empty `description` and `changelog`, a `migrations` array, and `migrationGuide` (+ `aiInstructions` when `recommendMigrate`) for breaking releases.
 
 ## Step 9: Preflight Before Release
 
 Run local verification only; do not publish locally.
 
 ```bash
-node packages/cli/scripts/check-docs-changelog.js --type <beta|rc|promote>
+node packages/cli/scripts/check-release-manifest.js --type <beta|rc|promote>
 node packages/cli/scripts/release-preflight.js check-versions
 node packages/cli/scripts/release-preflight.js verify-packed-cli
 node packages/cli/scripts/release-preflight.js publish-plan
@@ -195,7 +165,7 @@ pnpm typecheck
 pnpm test
 ```
 
-Skip `check-docs-changelog` only for stable patch releases where that command is not required by the release type.
+The gate only runs for beta/rc/promote release types.
 
 ## Step 10: Review and Confirm
 
@@ -203,9 +173,13 @@ Verify:
 
 1. `packages/cli/src/migrations/manifests/<version>.json` exists and has valid JSON.
 2. Manifest `changelog` renders as real newlines.
-3. Both docs-site changelog MDX files exist and match 1:1.
-4. **All** submodule commits are pushed before the main repo pointer commit (currently `docs-site/` + `marketplace/`). Verify with: `git submodule foreach 'sha=$(git rev-parse HEAD); git ls-remote origin $sha | grep -q $sha && echo "ok $name" || echo "FAIL $name $sha"'`. Tag-triggered CI does `git submodule update --init --recursive` and fails on the first unpushed pointer with `fatal: remote error: upload-pack: not our ref <SHA>`.
-5. `@mindfoldhq/trellis` and `@mindfoldhq/trellis-core` versions still match.
+3. `check-release-manifest.js` passes for the target version.
+4. `marketplace/` changes are reviewed and committed with the code repository.
+   It is an ordinary directory; there are no submodule pointers to publish.
+   Ensure the fork main branch contains the marketplace index and template
+   files before relying on the default download URLs. CI must match
+   `marketplace/**` when selecting changes to check.
+5. `trellis-wiki` and `trellis-wiki-core` versions still match.
 
 ## Step 11: Publish Through CI
 
@@ -221,8 +195,8 @@ pnpm release:promote
 After CI succeeds, verify public npm:
 
 ```bash
-npm view @mindfoldhq/trellis@<version> version dist-tags --json --registry=https://registry.npmjs.org/
-npm view @mindfoldhq/trellis-core@<version> version dist-tags --json --registry=https://registry.npmjs.org/
+npm view trellis-wiki@<version> version dist-tags --json --registry=https://registry.npmjs.org/
+npm view trellis-wiki-core@<version> version dist-tags --json --registry=https://registry.npmjs.org/
 ```
 
 If CI fails or npm visibility is wrong, fix the workflow/scripts and re-run the CI path. Do not use local publish to fill the gap.
@@ -233,7 +207,7 @@ Breaking releases must run end-to-end migration in a throwaway directory:
 
 ```bash
 mkdir /tmp/migrate-test && cd /tmp/migrate-test && git init -q .
-npx -y @mindfoldhq/trellis@<last-ga> init -y -u test --claude --cursor --<platforms>
+npx -y trellis-wiki@<last-ga> init -y -u test --claude --cursor --<platforms>
 node <repo>/packages/cli/dist/cli/index.js update --migrate --dry-run
 yes | node <repo>/packages/cli/dist/cli/index.js update --migrate --force
 yes | node <repo>/packages/cli/dist/cli/index.js update

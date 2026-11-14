@@ -2203,7 +2203,7 @@ export async function update(options: UpdateOptions): Promise<void> {
         `⚠️  Your CLI (${cliVersion}) is behind npm (${latestNpmVersion}).`,
       ),
     );
-    console.log(chalk.yellow(`   Run: trellis upgrade\n`));
+    console.log(chalk.yellow(`   Run: trellis-wiki upgrade\n`));
   }
 
   // Check for downgrade situation
@@ -2217,9 +2217,11 @@ export async function update(options: UpdateOptions): Promise<void> {
 
     if (!options.allowDowngrade) {
       console.log(chalk.gray("Solutions:"));
-      console.log(chalk.gray(`  1. Update your CLI: trellis upgrade`));
+      console.log(chalk.gray(`  1. Update your CLI: trellis-wiki upgrade`));
       console.log(
-        chalk.gray(`  2. Force downgrade: trellis update --allow-downgrade\n`),
+        chalk.gray(
+          `  2. Force downgrade: trellis-wiki update --allow-downgrade\n`,
+        ),
       );
       return;
     }
@@ -2253,7 +2255,7 @@ export async function update(options: UpdateOptions): Promise<void> {
         ),
     );
     console.log("");
-    console.log(chalk.yellow("  Run: trellis update --migrate-storage"));
+    console.log(chalk.yellow("  Run: trellis-wiki update --migrate-storage"));
     console.log("");
     console.log(
       chalk.gray(
@@ -2443,7 +2445,7 @@ export async function update(options: UpdateOptions): Promise<void> {
             ),
         );
         console.log("");
-        console.log(chalk.yellow(`  Run: trellis update --migrate`));
+        console.log(chalk.yellow(`  Run: trellis-wiki update --migrate`));
         console.log("");
         console.log(
           chalk.gray(
@@ -2938,7 +2940,7 @@ export async function update(options: UpdateOptions): Promise<void> {
         prdContent += `**From Version**: ${projectVersion}\n`;
         prdContent += `**To Version**: ${cliVersion}\n`;
         prdContent += `**Assignee**: ${currentDeveloper}\n\n`;
-        prdContent += `## Status\n\n- [ ] Review migration guide\n- [ ] Update custom files\n- [ ] Run \`trellis update --migrate\`\n- [ ] Test workflows\n\n`;
+        prdContent += `## Status\n\n- [ ] Review migration guide\n- [ ] Update custom files\n- [ ] Run \`trellis-wiki update --migrate\`\n- [ ] Test workflows\n\n`;
 
         for (const {
           version,

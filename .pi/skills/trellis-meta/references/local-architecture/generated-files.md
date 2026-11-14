@@ -1,80 +1,76 @@
-# Local Files Generated After Init
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
 
-`trellis init` writes the Trellis runtime into the user project. Later, `trellis update` tries to update Trellis-managed template files, but it uses `.trellis/.template-hashes.json` to determine which files have already been modified by the user.
+# Files Generated After Init
 
-This page only describes files that are visible and editable inside the user project.
+`trellis-wiki init` writes a locator and platform integrations into the code
+checkout, and workflow data into an external local wiki Git repository.
+First read `.treills.conf.json` and resolve its `storage` and `project` fields.
+Do not require the optional `.trellis` browse link to exist.
 
-## `.trellis/`
+## Storage And Checkout Boundaries
 
 ```text
-.trellis/
+code-checkout/
+├── .treills.conf.json
+├── .trellis -> <storage>/<project>/   # optional browsing only
+└── platform directories
+
+<storage>/<project>/
 ├── workflow.md
 ├── config.yaml
-├── .developer
-├── .version
-├── .template-hashes.json
-├── .runtime/
+├── project.json
+├── .template-hashes.json              # shared data template hashes
 ├── scripts/
 ├── spec/
 ├── tasks/
-└── workspace/
+├── workspace/
+└── .runtime/checkouts/<checkout-key>/
+    ├── .version
+    ├── .template-hashes.json          # checkout platform template hashes
+    ├── backups/
+    └── sessions/
 ```
 
-| Path | Usually editable? | Notes |
-| --- | --- | --- |
-| `.trellis/workflow.md` | Yes | Local workflow documentation and AI routing rules. |
-| `.trellis/config.yaml` | Yes | Project configuration, hooks, packages, journal line limits, and related settings. |
-| `.trellis/spec/` | Yes | Project specs, intended to be updated regularly by users and AI. |
-| `.trellis/tasks/` | Yes | Task material and research artifacts, maintained by the task workflow. |
-| `.trellis/workspace/` | Yes | Session records, usually written by `add_session.py`. |
-| `.trellis/scripts/` | Carefully | Local runtime. It can be customized, but only after understanding the call chain. |
-| `.trellis/.runtime/` | No | Runtime state, usually written automatically by hooks/scripts. |
-| `.trellis/.developer` | Carefully | Current developer identity. |
-| `.trellis/.version` | No | Trellis version record used by update/migration logic. |
-| `.trellis/.template-hashes.json` | No | Template hash record. Do not hand-write business rules here. |
+Keep command cwd at the code checkout. Invoke task and context scripts from
+the resolved external `scripts/` directory. Shared data belongs to the
+storage Git repository; platform integration changes belong to the code Git
+repository. Never blanket-stage unrelated tasks or journals.
+
+## Editable Data
+
+| Path relative to the external project root | Customization boundary |
+| --- | --- |
+| `workflow.md` | Workflow phases and routing. |
+| `config.yaml` | Packages, lifecycle hooks, and journal settings. |
+| `spec/` | User-owned coding conventions and design constraints. |
+| `tasks/` | Task PRDs, design, plans, and research. |
+| `workspace/` | Session journals maintained by task/session scripts. |
+| `scripts/` | Local runtime; understand callers before editing. |
+| `project.json`, `.runtime/`, `.template-hashes.json` | Binding and management records; do not hand-edit as business configuration. |
+
+The `/Users/xuhuale/.trellis-wiki/Trellis/...` spelling in other references is a logical browse path to
+these data files. A legacy project with a real `.trellis` directory must use
+`trellis-wiki update --migrate-storage` before ordinary updates can proceed.
 
 ## Platform Directories
 
-Different platforms generate different directories. Common categories:
+Hooks, settings, agents, skills, commands, prompts, and extensions stay in the
+code checkout. Read `../platform-files/platform-map.md` for platform-specific
+paths. Preserve user modifications, frontmatter, managed-block markers, and
+shared `.agents/skills/` rendering.
 
-| Category | Example paths | Purpose |
-| --- | --- | --- |
-| hooks | `.claude/hooks/`, `.codex/hooks/`, `.cursor/hooks/` | Inject session context, workflow-state, and sub-agent context. |
-| settings | `.claude/settings.json`, `.codex/hooks.json`, `.qoder/settings.json` | Tell the platform when to run hooks or plugins. |
-| agents | `.claude/agents/`, `.codex/agents/`, `.kiro/agents/`, `.zcode/cli/agents/` | Define agents such as `trellis-research`, `trellis-implement`, and `trellis-check`. |
-| skills | `.claude/skills/`, `.agents/skills/`, `.qoder/skills/` | Skills that auto-trigger or can be read by AI. |
-| commands/prompts/workflows | `.cursor/commands/`, `.github/prompts/`, `.devin/workflows/`, `.zcode/commands/` | Explicit user-invoked command or workflow entry points. |
+## Template Hashes And Local Customization
 
-When modifying a platform directory, also confirm whether `.trellis/workflow.md` still describes the same flow.
+`trellis-wiki update` uses the shared and checkout-specific hash records to
+distinguish pristine templates from user-modified files:
 
-## Meaning Of Template Hashes
-
-`.trellis/.template-hashes.json` records the content hash from the last time Trellis wrote a template file. `trellis update` uses it to distinguish three cases:
-
-| Case | Update behavior |
+| State | Update behavior |
 | --- | --- |
-| File was not modified by the user | It can be updated automatically. |
-| File was modified by the user | Prompt the user to overwrite, keep, or generate `.new`. |
-| File is no longer a current template | It may be deleted, renamed, or preserved according to migration rules. |
+| Disk content matches the recorded template hash | Safe automatic template update. |
+| Disk content differs from the recorded hash | Conflict: overwrite, keep, or generate `.new` according to the user choice. |
+| File is retired from current templates | Apply the explicit migration and ownership rules. |
 
-When an AI customizes local Trellis files, it does not need to maintain hashes manually. It is normal for Trellis update to recognize the result as "modified by the user."
-
-## Local Customization Boundaries
-
-Editable by default:
-
-- `.trellis/workflow.md`
-- `.trellis/config.yaml`
-- `.trellis/spec/**`
-- `.trellis/scripts/**`
-- Platform hooks, settings, agents, skills, commands, prompts, and workflows
-
-Do not edit by default:
-
-- Global npm install directory
-- `node_modules/@mindfoldhq/trellis`
-- Trellis GitHub repository source code
-- Concrete state files under `.trellis/.runtime/**`
-- Hash contents inside `.trellis/.template-hashes.json`
-
-Switch to the Trellis CLI source-code perspective only when the user explicitly wants to contribute upstream.
+Editing a template locally does not require rewriting its hash. It is normal
+for update to report such edits as user modifications. Keep project-private
+rules in specs or project-local skills, and avoid editing global npm installs
+or `node_modules/trellis-wiki` / `node_modules/trellis-wiki-core`.

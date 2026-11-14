@@ -1,13 +1,14 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Repository Analysis
 
 The goal is to discover the project's real architecture before writing rules. Do not start from generic spec templates and fill blanks. Start from the code, then let the spec structure follow.
 
 ## Analysis Order
 
-1. Read the existing `.trellis/spec/` tree and note which files are templates, outdated, or already project-specific.
+1. Read the existing `/Users/xuhuale/.trellis-wiki/Trellis/spec/` tree and note which files are templates, outdated, or already project-specific.
 2. Inspect package manifests, build scripts, workspace config, and top-level documentation to identify packages and runtime layers.
-3. Use GitNexus for execution flows, module clusters, dependency hubs, and impact-sensitive areas.
-4. Use ABCoder or language-native tooling for exact signatures, types, class boundaries, and implementation examples.
+3. Use ABCoder or language-native tooling for exact signatures, types, class boundaries, and implementation examples.
 5. Read representative source and test files directly before turning any finding into a spec rule.
 
 ## What To Capture
@@ -21,19 +22,6 @@ The goal is to discover the project's real architecture before writing rules. Do
 | Error handling | How are failures represented, logged, surfaced, and tested? |
 | Configuration | Where do defaults, environment config, generated files, and templates live? |
 | Tests | Which test styles are trusted examples for new work? |
-
-## GitNexus Usage
-
-Start broad, then inspect specific symbols:
-
-```text
-gitnexus_query({query: "CLI command execution flow"})
-gitnexus_query({query: "template generation and migration"})
-gitnexus_context({name: "SymbolName"})
-gitnexus_cypher({query: "MATCH (n)-[r]->(m) RETURN n.name, type(r), m.name LIMIT 30"})
-```
-
-Use GitNexus results to find important files and flows. Do not quote graph output as the final authority until you have checked the relevant source files.
 
 ## ABCoder Usage
 

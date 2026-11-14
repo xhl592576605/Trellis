@@ -50,7 +50,7 @@ from .paths import (
 # Helpers
 # =============================================================================
 
-_PACKAGE_NAME = "@mindfoldhq/trellis"
+_PACKAGE_NAME = "trellis-wiki"
 _UPDATE_CHECK_TIMEOUT_SECONDS = 1.0
 _VERSION_RE = re.compile(
     r"^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?\s*$"
@@ -353,7 +353,7 @@ def _fetch_trellis_version_output() -> str | None:
 
 def _extract_available_update_version(output: str) -> str | None:
     update_match = re.search(
-        r"Trellis update available:\s*"
+        r"(?:Trellis|trellis-wiki) update available:\s*"
         r"(?P<current>\S+)\s*(?:→|->)\s*(?P<latest>\S+)",
         output,
     )
@@ -485,8 +485,8 @@ def get_update_hint(repo_root: Path, context_key: str | None = None) -> str | No
         return None
 
     return (
-        f"Trellis update available: {current_version} -> {latest_version}, "
-        "run trellis update"
+        f"trellis-wiki update available: {current_version} -> {latest_version}, "
+        "run trellis-wiki update"
     )
 
 

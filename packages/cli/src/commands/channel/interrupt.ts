@@ -1,7 +1,4 @@
-import {
-  requestInterrupt,
-  type ChannelScope,
-} from "@mindfoldhq/trellis-core/channel";
+import { requestInterrupt, type ChannelScope } from "trellis-wiki-core/channel";
 
 import { parseChannelScope } from "./store/schema.js";
 import { resolveChannelTextBody } from "./text-body.js";

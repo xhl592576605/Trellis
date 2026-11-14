@@ -1,8 +1,9 @@
 /**
- * Remote template fetcher for Trellis CLI
+ * Remote template fetcher for trellis-wiki CLI
  *
- * Fetches spec templates from the official marketplace:
- * https://github.com/mindfold-ai/marketplace
+ * Fetches spec templates from the built-in marketplace shipped in this
+ * repository (marketplace/ directory):
+ * https://github.com/xhl592576605/Trellis/tree/main/marketplace
  */
 
 import { randomUUID } from "node:crypto";
@@ -17,9 +18,9 @@ import { toPosix } from "./posix.js";
 // =============================================================================
 
 export const TEMPLATE_INDEX_URL =
-  "https://raw.githubusercontent.com/mindfold-ai/marketplace/main/index.json";
+  "https://raw.githubusercontent.com/xhl592576605/Trellis/main/marketplace/index.json";
 
-const TEMPLATE_REPO = "gh:mindfold-ai/marketplace";
+const TEMPLATE_REPO = "gh:xhl592576605/Trellis/marketplace";
 
 /** Map template type to installation path */
 const INSTALL_PATHS: Record<string, string> = {

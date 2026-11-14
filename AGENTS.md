@@ -1,3 +1,50 @@
+# trellis-wiki 开发指南
+
+trellis-wiki 是 [Trellis](https://github.com/mindfold-ai/Trellis) 的 fork（AGPL-3.0-only）：双 npm 包 + 外部本地 wiki 存储。本文件是项目事实的统一入口；目录导航见 [CODEMAP.md](./CODEMAP.md)。
+
+## 常用命令（仓库根执行）
+
+```bash
+pnpm build                                 # 先 core 后 cli
+pnpm test                                  # 全量测试（core + cli）
+pnpm lint && pnpm typecheck
+pnpm --filter trellis-wiki lint:py         # basedpyright，含模板 Python
+node packages/cli/scripts/release-preflight.js check-versions
+node packages/cli/scripts/release-preflight.js verify-packed-cli
+node packages/cli/bin/trellis.js <cmd>     # 本地运行 CLI（需先 build 出 dist）
+```
+
+Trellis 任务脚本（task.py / get_context.py 等）不在本仓库：先读根目录 `.treills.conf.json`（storage + project），再调用 `<storage>/<project>/scripts/*.py`。本仓库的 `.trellis` 只是浏览链接，删除它不影响运行；脚本执行的 cwd 保持当前 checkout。
+
+## 架构与包边界
+
+- `packages/cli` = `trellis-wiki`：CLI 命令、平台 configurators、分发模板、迁移 manifest、发布脚本。
+- `packages/core` = `trellis-wiki-core`：channel / mem / task / testing 领域 SDK；不得打印终端输出、不得 `process.exit`、不得依赖 Commander/Chalk。
+- CLI 只通过公开子路径 import core（`trellis-wiki-core/channel` 等）；两包版本锁步，一个 git tag 一个版本。
+- `marketplace/` 是内置模板市场目录（本仓库内容，`--registry`/`workflow -m` 默认拉取源，勿删）。
+- 写码前读 `.trellis/spec/cli/backend/index.md`（或 core/unit-test 对应层）的 Pre-Development Checklist。
+
+## 双 Git 边界
+
+- 代码提交 → 本仓库；任务 / 日志 / 归档提交 → 外部存储仓库（finish-work 自动完成，严格限定当前任务路径）。
+- 禁止 `git add -A` 全库暂存；`.trellis` 相关暂存只能走 `safe_commit.py` 白名单。
+
+## 兼容承诺（勿破坏）
+
+`trellis` / `tl` 命令别名、`/trellis:*` 斜杠命令、`trellis-*` skills、`TRELLIS_*` 环境变量、`.treills.conf.json`、`~/.trellis-wiki` 存储布局、`.trellis` 浏览路径——全部保留；不为品牌更名做第二次数据迁移。
+
+## 发布
+
+CI-only：先 core 后 CLI；发布前 gate 为 `check-manifest-continuity` + `check-release-manifest`（本地 manifest 发布说明校验，取代旧 docs-site 检查）+ `verify-packed-cli`。禁止本地 `npm publish`。详见 `.trellis/spec/cli/backend/release-process.md`。
+
+## 文档地图
+
+- [CODEMAP.md](./CODEMAP.md) — 目录职责导航。
+- `.trellis/spec/` — 分层编码规范（外部存储内）。
+- 局部 `AGENTS.md` 仅在真实职责边界添加；默认继承本文件。
+
+提交代码前，检查当前 staged 的文件并保持 CODEMAP.md 同步：新增文件或目录要添加条目，已删除的条目要移除，职责变化的目录要更新描述。
+
 <!-- TRELLIS:START -->
 # Trellis Instructions
 
@@ -19,47 +66,3 @@ If you're using Codex or another agent-capable tool, additional project-scoped h
 Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
 
 <!-- TRELLIS:END -->
-
-<!-- gitnexus:start -->
-# GitNexus — Code Intelligence
-
-This project is indexed by GitNexus as **Trellis** (14336 symbols, 20870 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
-
-> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
-
-## Always Do
-
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "main"})`.
-- **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
-
-## Never Do
-
-- NEVER edit a function, class, or method without first running `impact` on it.
-- NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
-- NEVER commit changes without running `detect_changes()` to check affected scope.
-
-## Resources
-
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/Trellis/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/Trellis/clusters` | All functional areas |
-| `gitnexus://repo/Trellis/processes` | All execution flows |
-| `gitnexus://repo/Trellis/process/{name}` | Step-by-step execution trace |
-
-## CLI
-
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
-
-<!-- gitnexus:end -->

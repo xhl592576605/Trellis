@@ -1,6 +1,6 @@
 export {
   MEANINGFUL_EVENT_KINDS,
   matchesEventFilter,
-} from "@mindfoldhq/trellis-core/channel";
+} from "trellis-wiki-core/channel";
 
-export type { ChannelEventFilter } from "@mindfoldhq/trellis-core/channel";
+export type { ChannelEventFilter } from "trellis-wiki-core/channel";

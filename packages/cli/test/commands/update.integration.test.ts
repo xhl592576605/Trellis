@@ -48,6 +48,16 @@ vi.mock("giget", async () => {
   };
 });
 
+// Pin the CLI version below the 0.7.0 external-storage boundary: these
+// scenarios exercise the generic template-update machinery on legacy
+// in-repo layouts, which the real 0.7.0 CLI correctly refuses via the
+// storage-migration gate (covered by update-migrate-storage tests).
+vi.mock("../../src/constants/version.js", async (importOriginal) => {
+  const mod =
+    await importOriginal<typeof import("../../src/constants/version.js")>();
+  return { ...mod, VERSION: "0.6.17" };
+});
+
 // === Imports ===
 
 import { initLegacy as init } from "../helpers/legacy-init.js";
@@ -555,6 +565,9 @@ describe("update() integration", () => {
     const expectedContent = `# Local instructions\n\n${templateContent}\n\n## Project Notes\n\nKeep this.`;
 
     fs.writeFileSync(targetFull, existingContent);
+    const codemapPath = path.join(tmpDir, "CODEMAP.md");
+    const codemap = "# Project map\n\npackages/ owns application code.\n";
+    fs.writeFileSync(codemapPath, codemap);
 
     const hashFile = path.join(
       tmpDir,
@@ -573,6 +586,10 @@ describe("update() integration", () => {
     expect(readHashesV2(hashFile)[targetRelative]).toBe(
       computeHash(expectedContent),
     );
+    expect(fs.readFileSync(codemapPath, "utf-8")).toBe(codemap);
+    await update({});
+    expect(fs.readFileSync(targetFull, "utf-8")).toBe(expectedContent);
+    expect(fs.readFileSync(codemapPath, "utf-8")).toBe(codemap);
   });
 
   it("#4c preserves user-modified untracked AGENTS.md managed block", async () => {
