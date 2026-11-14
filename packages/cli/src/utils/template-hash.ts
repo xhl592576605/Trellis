@@ -20,6 +20,11 @@ import path from "node:path";
 import { DIR_NAMES, FILE_NAMES } from "../constants/paths.js";
 import type { TemplateHashes } from "../types/migration.js";
 import { writeFileAtomic } from "./atomic-write.js";
+import {
+  readExternalStore,
+  resolveWorkflowDir,
+  resolveManagedPath,
+} from "./external-store.js";
 import { toPosix } from "./posix.js";
 
 /** File name for storing template hashes */
@@ -27,6 +32,8 @@ const HASHES_FILE = ".template-hashes.json";
 
 /** Current schema version for `.template-hashes.json` */
 const HASHES_SCHEMA_VERSION = 2;
+
+export { HASHES_SCHEMA_VERSION };
 
 /** Persisted shape of the hashes file (v2). */
 interface StoredHashesV2 {
@@ -47,9 +54,12 @@ export function computeHash(content: string): string {
 
 /**
  * Get path to the hashes file
+ *
+ * External storage mode: the manifest lives inside the external project dir
+ * (the workflow root), so it follows the data it describes.
  */
 function getHashesPath(cwd: string): string {
-  return path.join(cwd, DIR_NAMES.WORKFLOW, HASHES_FILE);
+  return path.join(resolveWorkflowDir(cwd), HASHES_FILE);
 }
 
 /**
@@ -72,8 +82,7 @@ function normalizeHashKeys(hashes: TemplateHashes): TemplateHashes {
  * Windows compatibility issues at once: backslash keys and CRLF-based
  * hashes both differ from the v2 contract.
  */
-export function loadHashes(cwd: string): TemplateHashes {
-  const hashesPath = getHashesPath(cwd);
+function loadStoredHashes(hashesPath: string): TemplateHashes {
   if (!fs.existsSync(hashesPath)) {
     return {};
   }
@@ -103,18 +112,53 @@ export function loadHashes(cwd: string): TemplateHashes {
   }
 }
 
+/** Present shared workflow hashes together with only this checkout's installation. */
+export function loadHashes(cwd: string): TemplateHashes {
+  const store = readExternalStore(cwd);
+  const shared = loadStoredHashes(getHashesPath(cwd));
+  if (!store) return shared;
+  return {
+    ...Object.fromEntries(
+      Object.entries(shared).filter(([key]) => key.startsWith(".trellis/")),
+    ),
+    ...loadStoredHashes(path.join(store.runtimeDir, HASHES_FILE)),
+  };
+}
+
 /**
  * Save template hashes.
  *
  * Always writes the v2 schema with POSIX-normalized keys.
  */
 export function saveHashes(cwd: string, hashes: TemplateHashes): void {
-  const hashesPath = getHashesPath(cwd);
-  const payload: StoredHashesV2 = {
-    __version: HASHES_SCHEMA_VERSION,
-    hashes: normalizeHashKeys(hashes),
+  const normalized = normalizeHashKeys(hashes);
+  const store = readExternalStore(cwd);
+  const write = (filePath: string, entries: TemplateHashes): void => {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const payload: StoredHashesV2 = {
+      __version: HASHES_SCHEMA_VERSION,
+      hashes: entries,
+    };
+    writeFileAtomic(filePath, JSON.stringify(payload, null, 2));
   };
-  writeFileAtomic(hashesPath, JSON.stringify(payload, null, 2));
+  if (!store) {
+    write(getHashesPath(cwd), normalized);
+    return;
+  }
+  write(
+    getHashesPath(cwd),
+    Object.fromEntries(
+      Object.entries(normalized).filter(([key]) => key.startsWith(".trellis/")),
+    ),
+  );
+  write(
+    path.join(store.runtimeDir, HASHES_FILE),
+    Object.fromEntries(
+      Object.entries(normalized).filter(
+        ([key]) => !key.startsWith(".trellis/"),
+      ),
+    ),
+  );
 }
 
 /**
@@ -137,7 +181,7 @@ export function updateHashes(cwd: string, files: Map<string, string>): void {
  * Update hash for a single file by reading its current content
  */
 export function updateHashFromFile(cwd: string, relativePath: string): void {
-  const fullPath = path.join(cwd, relativePath);
+  const fullPath = resolveManagedPath(cwd, relativePath);
   if (!fs.existsSync(fullPath)) {
     return;
   }
@@ -189,7 +233,7 @@ export function isTemplateModified(
   relativePath: string,
   hashes: TemplateHashes,
 ): boolean {
-  const fullPath = path.join(cwd, relativePath);
+  const fullPath = resolveManagedPath(cwd, relativePath);
 
   // If file doesn't exist, can't be modified
   if (!fs.existsSync(fullPath)) {
@@ -226,7 +270,7 @@ export function matchesOriginalTemplate(
   relativePath: string,
   originalContent: string,
 ): boolean {
-  const fullPath = path.join(cwd, relativePath);
+  const fullPath = resolveManagedPath(cwd, relativePath);
 
   if (!fs.existsSync(fullPath)) {
     return false;
@@ -264,6 +308,8 @@ export function getModificationStatus(
 const EXCLUDE_FROM_HASH = [
   ".template-hashes.json", // Hash file itself
   ".version", // Version file
+  ".runtime/", // Checkout records, locks, tickets and caches
+  "project.json", // Reverse binding, not a template
   ".gitignore", // Git ignore files
   ".developer", // Developer identity file
   "workspace/", // Workspace files (user data)
@@ -293,7 +339,16 @@ export function shouldExcludeFromHash(relativePath: string): boolean {
  * hash dictionary keys regardless of host OS.
  */
 function collectFiles(cwd: string, dir: string): string[] {
-  const fullDir = path.join(cwd, dir);
+  // External storage mode: `.trellis` data lives in the workflow root (the
+  // external project dir); keys stay in the logical `.trellis/...` form.
+  const base =
+    dir === DIR_NAMES.WORKFLOW
+      ? resolveWorkflowDir(cwd)
+      : path.join(
+          resolveWorkflowDir(cwd),
+          path.relative(DIR_NAMES.WORKFLOW, dir),
+        );
+  const fullDir = base;
   if (!fs.existsSync(fullDir)) {
     return [];
   }
@@ -360,7 +415,8 @@ export function initializeHashes(
   options: InitializeHashesOptions = {},
 ): number {
   const { trackedPaths, merge = false } = options;
-  const hashes: TemplateHashes = merge ? loadHashes(cwd) : {};
+  const external = readExternalStore(cwd) !== null;
+  const hashes: TemplateHashes = merge || external ? loadHashes(cwd) : {};
 
   // Platform + root files: hash only paths actually written this run.
   if (trackedPaths) {
@@ -386,7 +442,8 @@ export function initializeHashes(
   // data-loss bug this contract addresses.
   const files = collectFiles(cwd, ".trellis");
   for (const relativePath of files) {
-    const fullPath = path.join(cwd, relativePath);
+    if (external && trackedPaths && !trackedPaths.has(relativePath)) continue;
+    const fullPath = resolveManagedPath(cwd, relativePath);
     try {
       const content = fs.readFileSync(fullPath, "utf-8");
       hashes[relativePath] = computeHash(content);
@@ -402,7 +459,7 @@ export function initializeHashes(
   if (!trackedPaths) {
     for (const relativePath of [FILE_NAMES.AGENTS]) {
       if (shouldExcludeFromHash(relativePath)) continue;
-      const fullPath = path.join(cwd, relativePath);
+      const fullPath = resolveManagedPath(cwd, relativePath);
       if (!fs.existsSync(fullPath)) continue;
       try {
         const content = fs.readFileSync(fullPath, "utf-8");

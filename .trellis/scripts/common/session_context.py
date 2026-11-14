@@ -26,6 +26,7 @@ from .config import get_git_packages
 from .git import run_git
 from .packages_context import get_packages_section
 from .tasks import iter_active_tasks, load_task, get_all_statuses, children_progress
+from .external_store import render_workflow_paths, resolve_store_for_root
 from .paths import (
     DIR_SCRIPTS,
     DIR_SPEC,
@@ -38,7 +39,10 @@ from .paths import (
     get_current_task_source,
     get_developer,
     get_repo_root,
+    resolve_task_ref,
     get_tasks_dir,
+    workflow_dir,
+    workspace_display_dir,
 )
 
 
@@ -320,7 +324,7 @@ def _append_package_git_context(lines: list[str], package_git_info: list[dict]) 
 
 def _read_project_version(repo_root: Path) -> str | None:
     try:
-        version = (repo_root / DIR_WORKFLOW / ".version").read_text(
+        version = (workflow_dir(repo_root) / ".version").read_text(
             encoding="utf-8"
         ).strip()
     except OSError:
@@ -435,8 +439,7 @@ def _update_marker_path(repo_root: Path, context_key: str | None = None) -> Path
     if not safe_key:
         safe_key = "session"
     return (
-        repo_root
-        / DIR_WORKFLOW
+        workflow_dir(repo_root)
         / ".runtime"
         / f"update-check-{safe_key[:160]}.marker"
     )
@@ -509,11 +512,10 @@ def get_context_json(repo_root: Path | None = None) -> dict:
 
     journal_lines = 0
     journal_relative = ""
-    if journal_file and developer:
+    workspace_display = workspace_display_dir(repo_root)
+    if journal_file and workspace_display:
         journal_lines = count_lines(journal_file)
-        journal_relative = (
-            f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{journal_file.name}"
-        )
+        journal_relative = f"{workspace_display}/{journal_file.name}"
 
     root_git_info = _collect_root_git_info(repo_root)
 
@@ -621,8 +623,8 @@ def get_context_text(repo_root: Path | None = None) -> str:
     # Current task
     lines.append("## CURRENT TASK")
     current_task = get_current_task(repo_root)
-    if current_task:
-        current_task_dir = repo_root / current_task
+    current_task_dir = resolve_task_ref(current_task, repo_root) if current_task else None
+    if current_task_dir is not None:
         source_type, context_key, _ = get_current_task_source(repo_root)
         lines.append(f"Path: {current_task}")
         lines.append(
@@ -694,7 +696,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
     journal_file = get_active_journal_file(repo_root)
     if journal_file:
         journal_lines = count_lines(journal_file)
-        relative = f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{journal_file.name}"
+        relative = f"{workspace_display_dir(repo_root)}/{journal_file.name}"
         lines.append(f"Active file: {relative}")
         lines.append(f"Line count: {journal_lines} / 2000")
         if journal_lines > 1800:
@@ -711,14 +713,16 @@ def get_context_text(repo_root: Path | None = None) -> str:
 
     # Paths
     lines.append("## PATHS")
-    lines.append(f"Workspace: {DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/")
+    lines.append(f"Workspace: {workspace_display_dir(repo_root)}/")
     lines.append(f"Tasks: {DIR_WORKFLOW}/{DIR_TASKS}/")
     lines.append(f"Spec: {DIR_WORKFLOW}/{DIR_SPEC}/")
     lines.append("")
 
     lines.append("========================================")
 
-    return "\n".join(lines)
+    content = "\n".join(lines)
+    store = resolve_store_for_root(repo_root)
+    return render_workflow_paths(content, store.project_dir) if store else content
 
 
 # =============================================================================
@@ -765,7 +769,8 @@ def get_context_record_json(repo_root: Path | None = None) -> dict:
     current_task = get_current_task(repo_root)
     if current_task:
         source_type, context_key, _ = get_current_task_source(repo_root)
-        ct = load_task(repo_root / current_task)
+        task_path = resolve_task_ref(current_task, repo_root)
+        ct = load_task(task_path) if task_path is not None else None
         if ct:
             current_task_info = {
                 "path": current_task,
@@ -864,7 +869,8 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
         lines.append(
             f"Source: {source_type}" + (f":{context_key}" if context_key else "")
         )
-        ct = load_task(repo_root / current_task)
+        task_path = resolve_task_ref(current_task, repo_root)
+        ct = load_task(task_path) if task_path is not None else None
         if ct:
             lines.append(f"Name: {ct.name}")
             lines.append(f"Status: {ct.status}")
@@ -874,7 +880,9 @@ def get_context_text_record(repo_root: Path | None = None) -> str:
 
     lines.append("========================================")
 
-    return "\n".join(lines)
+    content = "\n".join(lines)
+    store = resolve_store_for_root(repo_root)
+    return render_workflow_paths(content, store.project_dir) if store else content
 
 
 def output_text(repo_root: Path | None = None) -> None:

@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Optional
 
 
-CONFIG_REL_PATH = ".trellis/config.yaml"
 
 
 def _unquote(value: str) -> str:
@@ -224,10 +223,15 @@ def parse_simple_yaml(content: str, source: str = "config.yaml") -> dict:
     return result
 
 
-def read_trellis_config(repo_root: Optional[Path] = None) -> dict:
-    """Read .trellis/config.yaml. Returns {} on missing or malformed file."""
+def read_trellis_config(repo_root: Optional[Path] = None, trellis_dir: Optional[Path] = None) -> dict:
+    """Read the Trellis config.yaml. Returns {} on missing or malformed file.
+
+    ``trellis_dir`` is the resolved workflow data dir (external project dir
+    or legacy ``.trellis``); when omitted it falls back to
+    ``repo_root/.trellis`` so standalone callers keep working.
+    """
     root = repo_root or Path.cwd()
-    config_file = root / CONFIG_REL_PATH
+    config_file = (trellis_dir or root / Path(".trellis")) / "config.yaml"
     try:
         content = config_file.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError):

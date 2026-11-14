@@ -40,6 +40,7 @@ from common.paths import (
     get_developer,
     get_tasks_dir,
     get_current_task,
+    workflow_dir,
 )
 from common.active_task import (
     clear_active_task,
@@ -190,21 +191,23 @@ def cmd_start(args: argparse.Namespace) -> int:
         print("Hint: Use task name (e.g., 'my-task') or full path (e.g., '.trellis/tasks/01-31-my-task')")
         return 1
 
-    # Convert to relative path for storage. repo_root is resolved because
-    # full_path already is (resolve_task_dir only returns paths inside the
-    # resolved root), so an unresolved repo_root would mismatch under a
-    # symlink (e.g. /tmp on macOS) and reject a perfectly normal task.
+    # Convert to the stable `.trellis/...` display ref for storage. In legacy
+    # layouts that is a repo-relative path; in external mode the task dir
+    # lives under the external project dir, so it is mapped through the
+    # workflow dir's real location instead. Refusing rather than storing an
+    # absolute path keeps an out-of-bounds ref out of the session pointer.
     try:
         task_dir = full_path.relative_to(repo_root.resolve()).as_posix()
     except ValueError:
-        # resolve_task_dir already refused everything outside the repo, so
-        # this is unreachable in practice. Refuse rather than fall back to
-        # str(full_path) — that fallback (a lexical relative_to() paired with
-        # an absolute-path fallback) is exactly the pattern that let a `..`
-        # ref escape into storage before this fix.
-        print(colored(f"Error: Task not found: {task_input}", Colors.RED))
-        print("Hint: Use task name (e.g., 'my-task') or full path (e.g., '.trellis/tasks/01-31-my-task')")
-        return 1
+        try:
+            workflow_real = workflow_dir(repo_root).resolve()
+            task_dir = (
+                Path(DIR_WORKFLOW) / full_path.relative_to(workflow_real)
+            ).as_posix()
+        except (ValueError, OSError):
+            print(colored(f"Error: Task not found: {task_input}", Colors.RED))
+            print("Hint: Use task name (e.g., 'my-task') or full path (e.g., '.trellis/tasks/01-31-my-task')")
+            return 1
 
     task_json_path = full_path / FILE_TASK_JSON
 

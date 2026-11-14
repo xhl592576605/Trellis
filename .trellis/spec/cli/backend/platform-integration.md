@@ -2091,7 +2091,26 @@ This keeps state minimal, avoids the "task.json drifts from filesystem reality" 
 
 ## Bootstrap & Joiner Task Auto-Generation
 
-`trellis init` generates a first-session task based on checkout state. Three branches dispatch off two filesystem flags:
+The table and developer-signal rules below describe **legacy layouts only**.
+External locator mode retains first-project bootstrap but never calls developer
+initialization or generates joiner onboarding. Re-init reuses the binding and
+checkout manifest; a missing browse link is repaired independently. Workspace
+journal/index creation belongs to the first locked journal writer, so a fresh
+required commit has no unowned generated baseline. Verify with
+`external-workflow.integration.test.ts` and `init-external-storage.integration.test.ts`.
+
+`getBootstrapPrdContent(..., trellisRoot?)` must also receive the external
+root: its spec tables, guide paths, package sections and task-location prose
+are direct absolute paths, with POSIX separators in Markdown. Render completion
+commands through the shared shell-safe path renderer. Keep `task.json` logical
+`relatedFiles` references unchanged; runtime resolvers own that mapping.
+`writeTaskSkeleton` remains idempotent and never overwrites an existing PRD
+on re-init. Tests remove the browse link, check that every generated spec
+reference exists, execute a quoted completion command with spaces/CJK, and
+verify re-init preserves user notes; cover monorepo package sections too.
+
+For legacy layouts, `trellis init` generates a first-session task based on
+checkout state. Three branches dispatch off two filesystem flags:
 
 | `.trellis/` exists? | `.trellis/.developer` exists? | Meaning                                                           | Task generated                           |
 | ------------------- | ----------------------------- | ----------------------------------------------------------------- | ---------------------------------------- |

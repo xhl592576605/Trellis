@@ -16,6 +16,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { DIR_NAMES } from "../../constants/paths.js";
+import {
+  isExternalMode,
+  resolveWorkflowDir,
+} from "../../utils/external-store.js";
 
 /** Top-level `.trellis/*` entries eligible for symlink auto-trust. */
 const AUTO_TRUST_ENTRIES = ["tasks", "workspace"] as const;
@@ -105,7 +109,7 @@ function stripTrustValue(s: string): string {
 }
 
 function loadChannelTrustConfig(cwd: string): ChannelTrustConfig {
-  const configPath = path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml");
+  const configPath = path.join(resolveWorkflowDir(cwd), "config.yaml");
   if (!fs.existsSync(configPath)) return { trustedDirs: [] };
   let content: string;
   try {
@@ -124,6 +128,12 @@ export function resolveTrustedRoots(cwd: string): string[] {
   const config = loadChannelTrustConfig(cwd);
   const roots: string[] = [];
 
+  // External storage mode: the bound workflow dir is a trusted root by
+  // definition (the root config is the verified binding); no symlink needed.
+  if (isExternalMode(cwd)) {
+    roots.push(fs.realpathSync(resolveWorkflowDir(cwd)));
+  }
+
   for (const entry of config.trustedDirs) {
     const resolved = path.resolve(cwd, entry);
     try {
@@ -135,7 +145,8 @@ export function resolveTrustedRoots(cwd: string): string[] {
     }
   }
 
-  if (config.autoTrustSymlinks !== false) {
+  // Legacy link discovery must not widen a verified external binding.
+  if (!isExternalMode(cwd) && config.autoTrustSymlinks !== false) {
     for (const entryName of AUTO_TRUST_ENTRIES) {
       const entryPath = path.join(cwd, DIR_NAMES.WORKFLOW, entryName);
       let lstat: fs.Stats;

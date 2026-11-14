@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from .paths import DIR_WORKFLOW, get_repo_root
+from .paths import get_repo_root
 from .trellis_config import parse_simple_yaml
 
 # The YAML subset parser lives in trellis_config.py — it imports nothing from
@@ -71,7 +71,9 @@ def _is_true_config_value(value: object, label: str = "config flag") -> bool:
 def _get_config_path(repo_root: Path | None = None) -> Path:
     """Get path to config.yaml."""
     root = repo_root or get_repo_root()
-    return root / DIR_WORKFLOW / CONFIG_FILE
+    from .paths import workflow_dir
+
+    return workflow_dir(root) / CONFIG_FILE
 
 
 def _load_config(repo_root: Path | None = None) -> dict:

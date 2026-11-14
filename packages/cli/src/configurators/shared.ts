@@ -76,6 +76,12 @@ export function getPythonCommandForPlatform(
  * Idempotent: running it twice produces the same result.
  */
 export function replacePythonCommandLiterals(content: string): string {
+  if (content.includes("# {{EXTERNAL_STORE_BOOTSTRAP}}")) {
+    content = content.replace(
+      "# {{EXTERNAL_STORE_BOOTSTRAP}}",
+      getExternalStoreBootstrap("py"),
+    );
+  }
   const target = getPythonCommandForPlatform();
   if (target === "python3") return content;
   return content
@@ -347,6 +353,12 @@ export function wrapWithOmpFrontmatter(name: string, content: string): string {
 // ---------------------------------------------------------------------------
 
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  renderWorkflowPaths,
+  isExternalMode,
+  resolveWorkflowDir,
+} from "../utils/external-store.js";
 import { ensureDir, writeFile } from "../utils/file-writer.js";
 import {
   type CommonTemplate,
@@ -356,6 +368,7 @@ import {
 } from "../templates/common/index.js";
 import {
   getSharedHookScriptsForPlatform,
+  getExternalStoreBootstrap,
   type SharedHookPlatform,
 } from "../templates/shared-hooks/index.js";
 
@@ -537,10 +550,50 @@ export function collectSkillTemplates(
 /** Apply the python3 → python rewrite to every entry of a template map. */
 export function renderTemplateMap(
   files: Map<string, string>,
+  cwd = process.cwd(),
 ): Map<string, string> {
   const rendered = new Map<string, string>();
+  const externalRoot = isExternalMode(cwd) ? resolveWorkflowDir(cwd) : null;
   for (const [relPath, content] of files) {
-    rendered.set(relPath, replacePythonCommandLiterals(content));
+    let text = replacePythonCommandLiterals(content);
+    if (relPath.endsWith(".md") && externalRoot) {
+      text = renderWorkflowPaths(text, externalRoot);
+      const bootstrap =
+        "Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.\n\n";
+      const frontmatter = /^(---\r?\n[\s\S]*?\r?\n---\r?\n)/;
+      text = frontmatter.test(text)
+        ? text.replace(frontmatter, "$1\n" + bootstrap)
+        : bootstrap + text;
+    }
+    // These hosts store agent-facing prompt text in structured JSON.
+    if (
+      externalRoot &&
+      relPath.endsWith(".json") &&
+      (relPath.startsWith(".snow/commands/") ||
+        relPath.startsWith(".kiro/agents/"))
+    ) {
+      const data = JSON.parse(text) as {
+        command?: string;
+        prompt?: string;
+        description?: string;
+        resources?: string[];
+      };
+      for (const key of ["command", "prompt", "description"] as const) {
+        const value = data[key];
+        if (typeof value === "string")
+          data[key] = renderWorkflowPaths(value, externalRoot);
+      }
+      if (data.resources)
+        data.resources = data.resources.map((uri) =>
+          uri.startsWith("file://.trellis/")
+            ? pathToFileURL(
+                path.join(externalRoot, uri.slice("file://.trellis/".length)),
+              ).href
+            : uri,
+        );
+      text = JSON.stringify(data, null, 2) + "\n";
+    }
+    rendered.set(relPath, text);
   }
   return rendered;
 }
@@ -556,7 +609,7 @@ export async function writeTemplateMap(
   cwd: string,
   files: Map<string, string>,
 ): Promise<void> {
-  for (const [relPath, content] of renderTemplateMap(files)) {
+  for (const [relPath, content] of renderTemplateMap(files, cwd)) {
     const absPath = path.join(cwd, ...relPath.split("/"));
     ensureDir(path.dirname(absPath));
     await writeFile(absPath, content);

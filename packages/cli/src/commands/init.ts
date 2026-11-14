@@ -1,5 +1,6 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import chalk from "chalk";
@@ -19,6 +20,19 @@ import {
 } from "../configurators/shared.js";
 import { AI_TOOLS, type CliFlag } from "../types/ai-tools.js";
 import { DIR_NAMES, FILE_NAMES, PATHS } from "../constants/paths.js";
+import {
+  DEFAULT_STORAGE_ROOT,
+  createBrowseLink,
+  prepareExternalStorage,
+  resolveWorkflowDir,
+  resolveManagedPath,
+  renderWorkflowPaths,
+  readExternalStore,
+  runtimeDirOf,
+  isExternalMode,
+  CONF_FILENAME,
+  writeRootConfig,
+} from "../utils/external-store.js";
 import { VERSION } from "../constants/version.js";
 import { agentsMdContent } from "../templates/markdown/index.js";
 import {
@@ -66,13 +80,27 @@ import {
 import { setupProxy, maskProxyUrl } from "../utils/proxy.js";
 import { toPosix } from "../utils/posix.js";
 import { updateHashes } from "../utils/template-hash.js";
+import { writeFileAtomic } from "../utils/atomic-write.js";
+
+function recordExternalEntrypoints(cwd: string): void {
+  const entries = new Map([
+    [CONF_FILENAME, fs.readFileSync(path.join(cwd, CONF_FILENAME), "utf8")],
+  ]);
+  const browseLink = path.join(cwd, DIR_NAMES.WORKFLOW);
+  if (fs.existsSync(browseLink) && fs.lstatSync(browseLink).isSymbolicLink()) {
+    entries.set(DIR_NAMES.WORKFLOW, fs.readlinkSync(browseLink));
+  }
+  updateHashes(cwd, entries);
+}
 
 const MIN_PYTHON_MAJOR = 3;
 const MIN_PYTHON_MINOR = 9;
 const PYTHON_VERSION_RE = /Python (\d+)\.(\d+)/;
 
 function collectSpecPaths(cwd: string): Set<string> {
-  const specRoot = path.join(cwd, PATHS.SPEC);
+  // External storage mode: spec lives under the workflow root; keys stay
+  // in the logical `.trellis/spec/...` form.
+  const specRoot = path.join(resolveWorkflowDir(cwd), "spec");
   const paths = new Set<string>();
   if (!fs.existsSync(specRoot)) return paths;
 
@@ -82,7 +110,11 @@ function collectSpecPaths(cwd: string): Set<string> {
       if (entry.isDirectory()) {
         walk(fullPath);
       } else if (entry.isFile()) {
-        paths.add(toPosix(path.relative(cwd, fullPath)));
+        paths.add(
+          toPosix(
+            path.join(".trellis", "spec", path.relative(specRoot, fullPath)),
+          ),
+        );
       }
     }
   };
@@ -321,8 +353,13 @@ function writeTaskSkeleton(
   taskName: string,
   taskJson: TaskJson,
   prdContent: string,
+  trellisRoot?: string,
 ): boolean {
-  const taskDir = path.join(cwd, PATHS.TASKS, taskName);
+  // trellisRoot IS the workflow dir; PATHS.TASKS already carries the
+  // legacy `.trellis/` prefix, so it is only joined for the cwd case.
+  const taskDir = trellisRoot
+    ? path.join(trellisRoot, DIR_NAMES.TASKS, taskName)
+    : path.join(cwd, PATHS.TASKS, taskName);
   if (fs.existsSync(taskDir)) return true; // idempotent
 
   try {
@@ -388,7 +425,15 @@ function getBootstrapPrdContent(
   projectType: ProjectType,
   pythonCmd: string,
   packages?: DetectedPackage[],
+  trellisRoot?: string,
 ): string {
+  const workflowRoot = trellisRoot ? toPosix(trellisRoot) : ".trellis";
+  const taskCommand = trellisRoot
+    ? renderWorkflowPaths(
+        `${pythonCmd} ./.trellis/scripts/task.py`,
+        trellisRoot,
+      )
+    : `${pythonCmd} ./.trellis/scripts/task.py`;
   const checklistItems = getBootstrapChecklistItems(projectType, packages);
   const checklistMarkdown = checklistItems
     .map((item) => `- [ ] ${item}`)
@@ -399,11 +444,11 @@ function getBootstrapPrdContent(
 **You (the AI) are running this task. The developer does not read this file.**
 
 The developer just ran \`trellis init\` on this project for the first time.
-\`.trellis/\` now exists with empty spec scaffolding, and this bootstrap task
-exists under \`.trellis/tasks/\`. When they want to work on it, they should start
+\`${workflowRoot}/\` now exists with empty spec scaffolding, and this bootstrap task
+exists under \`${workflowRoot}/tasks/\`. When they want to work on it, they should start
 this task from a session that provides Trellis session identity.
 
-**Your job**: help them populate \`.trellis/spec/\` with the team's real
+**Your job**: help them populate \`${workflowRoot}/spec/\` with the team's real
 coding conventions. Every future AI session — this project's
 \`trellis-implement\` and \`trellis-check\` sub-agents — auto-loads spec files
 listed in per-task jsonl manifests. Empty spec = sub-agents write generic
@@ -430,11 +475,11 @@ ${checklistMarkdown}
 
 | File | What to document |
 |------|------------------|
-| \`.trellis/spec/backend/directory-structure.md\` | Where different file types go (routes, services, utils) |
-| \`.trellis/spec/backend/database-guidelines.md\` | ORM, migrations, query patterns, naming conventions |
-| \`.trellis/spec/backend/error-handling.md\` | How errors are caught, logged, and returned |
-| \`.trellis/spec/backend/logging-guidelines.md\` | Log levels, format, what to log |
-| \`.trellis/spec/backend/quality-guidelines.md\` | Code review standards, testing requirements |
+| \`${workflowRoot}/spec/backend/directory-structure.md\` | Where different file types go (routes, services, utils) |
+| \`${workflowRoot}/spec/backend/database-guidelines.md\` | ORM, migrations, query patterns, naming conventions |
+| \`${workflowRoot}/spec/backend/error-handling.md\` | How errors are caught, logged, and returned |
+| \`${workflowRoot}/spec/backend/logging-guidelines.md\` | Log levels, format, what to log |
+| \`${workflowRoot}/spec/backend/quality-guidelines.md\` | Code review standards, testing requirements |
 `;
 
   const frontendSection = `
@@ -443,19 +488,19 @@ ${checklistMarkdown}
 
 | File | What to document |
 |------|------------------|
-| \`.trellis/spec/frontend/directory-structure.md\` | Component/page/hook organization |
-| \`.trellis/spec/frontend/component-guidelines.md\` | Component patterns, props conventions |
-| \`.trellis/spec/frontend/hook-guidelines.md\` | Custom hook naming, patterns |
-| \`.trellis/spec/frontend/state-management.md\` | State library, patterns, what goes where |
-| \`.trellis/spec/frontend/type-safety.md\` | TypeScript conventions, type organization |
-| \`.trellis/spec/frontend/quality-guidelines.md\` | Linting, testing, accessibility |
+| \`${workflowRoot}/spec/frontend/directory-structure.md\` | Component/page/hook organization |
+| \`${workflowRoot}/spec/frontend/component-guidelines.md\` | Component patterns, props conventions |
+| \`${workflowRoot}/spec/frontend/hook-guidelines.md\` | Custom hook naming, patterns |
+| \`${workflowRoot}/spec/frontend/state-management.md\` | State library, patterns, what goes where |
+| \`${workflowRoot}/spec/frontend/type-safety.md\` | TypeScript conventions, type organization |
+| \`${workflowRoot}/spec/frontend/quality-guidelines.md\` | Linting, testing, accessibility |
 `;
 
   const footer = `
 
 ### Thinking guides (already populated)
 
-\`.trellis/spec/guides/\` contains general thinking guides pre-filled with
+\`${workflowRoot}/spec/guides/\` contains general thinking guides pre-filled with
 best practices. Customize only if something clearly doesn't fit this project.
 
 ---
@@ -465,7 +510,7 @@ best practices. Customize only if something clearly doesn't fit this project.
 ### Step 1: Import from existing convention files first (preferred)
 
 Search the repo for existing convention docs. If any exist, read them and
-extract the relevant rules into the matching \`.trellis/spec/\` files —
+extract the relevant rules into the matching \`${workflowRoot}/spec/\` files —
 usually much faster than documenting from scratch.
 
 | File / Directory | Tool |
@@ -510,7 +555,7 @@ is a separate conversation, not a bootstrap concern.
 - The platform hook auto-injects those spec files + the task's \`prd.md\`
   into every sub-agent prompt, so the sub-agent codes/reviews per team
   conventions without anyone pasting them manually.
-- Source of truth: \`.trellis/spec/\`. That's why filling it well now pays
+- Source of truth: \`${workflowRoot}/spec/\`. That's why filling it well now pays
   off forever.
 
 ---
@@ -521,8 +566,8 @@ When the developer confirms the checklist items above are done with real
 examples (not placeholders), guide them to run:
 
 \`\`\`bash
-${pythonCmd} ./.trellis/scripts/task.py finish
-${pythonCmd} ./.trellis/scripts/task.py archive 00-bootstrap-guidelines
+${taskCommand} finish
+${taskCommand} archive 00-bootstrap-guidelines
 \`\`\`
 
 After archive, every new developer who joins this project will get a
@@ -546,12 +591,12 @@ etc.) I can pull from, or should I scan the codebase from scratch?"
     for (const pkg of packages) {
       const pkgType = pkg.type === "unknown" ? "fullstack" : pkg.type;
       const specName = sanitizePkgName(pkg.name);
-      content += `\n### Package: ${pkg.name} (\`spec/${specName}/\`)\n`;
+      content += `\n### Package: ${pkg.name} (\`${workflowRoot}/spec/${specName}/\`)\n`;
       if (pkgType !== "frontend") {
-        content += `\n- Backend guidelines: \`.trellis/spec/${specName}/backend/\`\n`;
+        content += `\n- Backend guidelines: \`${workflowRoot}/spec/${specName}/backend/\`\n`;
       }
       if (pkgType !== "backend") {
-        content += `\n- Frontend guidelines: \`.trellis/spec/${specName}/frontend/\`\n`;
+        content += `\n- Frontend guidelines: \`${workflowRoot}/spec/${specName}/frontend/\`\n`;
       }
     }
   } else if (projectType === "frontend") {
@@ -605,10 +650,22 @@ function createBootstrapTask(
   pythonCmd: string,
   projectType: ProjectType,
   packages?: DetectedPackage[],
+  trellisRoot?: string,
 ): boolean {
   const taskJson = getBootstrapTaskJson(developer, projectType, packages);
-  const prdContent = getBootstrapPrdContent(projectType, pythonCmd, packages);
-  return writeTaskSkeleton(cwd, BOOTSTRAP_TASK_NAME, taskJson, prdContent);
+  const prdContent = getBootstrapPrdContent(
+    projectType,
+    pythonCmd,
+    packages,
+    trellisRoot,
+  );
+  return writeTaskSkeleton(
+    cwd,
+    BOOTSTRAP_TASK_NAME,
+    taskJson,
+    prdContent,
+    trellisRoot,
+  );
 }
 
 // =============================================================================
@@ -791,7 +848,8 @@ async function handleReinit(
   ).map((t) => t.key);
 
   let doAddPlatforms = explicitTools.length > 0;
-  let doAddDeveloper = !!options.user;
+  const external = isExternalMode(cwd);
+  let doAddDeveloper = !external && !!options.user;
   let platformsToAdd: string[] = explicitTools;
 
   // No explicit flags → show menu
@@ -817,10 +875,14 @@ async function handleReinit(
         message: "Trellis is already initialized. What would you like to do?",
         choices: [
           { name: "Add AI platform(s)", value: "add-platform" },
-          {
-            name: "Set up developer identity on this device",
-            value: "add-developer",
-          },
+          ...(!external
+            ? [
+                {
+                  name: "Set up developer identity on this device",
+                  value: "add-developer",
+                },
+              ]
+            : []),
           { name: "Full re-initialize", value: "full" },
         ],
       },
@@ -1039,6 +1101,16 @@ interface InitOptions {
   withStatusline?: boolean;
   workflow?: string;
   workflowSource?: string;
+  /**
+   * External storage root (opt-in external storage mode). `true` means the
+   * flag was given without a value (default root). When set, workflow
+   * data goes to `<storage>/<project>` (project defaults to the current
+   * directory name), the code root gets a `.treills.conf.json` locator, and
+   * the in-project `.trellis` becomes a browse-only link.
+   */
+  storage?: string | boolean;
+  /** External project directory name (external storage mode only). */
+  project?: string;
 }
 
 // Compile-time check: every CliFlag must be a key of InitOptions.
@@ -1054,7 +1126,7 @@ const _cliFlagCheck: _AssertCliFlagsInOptions = true;
  * Appends packages: and default_package: without disturbing existing config.
  */
 function writeMonorepoConfig(cwd: string, packages: DetectedPackage[]): void {
-  const configPath = path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml");
+  const configPath = path.join(resolveWorkflowDir(cwd), "config.yaml");
   let content = "";
 
   try {
@@ -1118,13 +1190,74 @@ export async function init(options: InitOptions): Promise<void> {
   }
 
   const cwd = process.cwd();
-  const isFirstInit = !fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW));
-  // Captured here (before createWorkflowStructure + init_developer run) so
-  // the three-branch dispatch at the bottom can tell "fresh clone joiner"
-  // (.trellis/ exists, .developer missing) apart from "creator first init".
-  const hadDeveloperFileAtStart = fs.existsSync(
-    path.join(cwd, DIR_NAMES.WORKFLOW, FILE_NAMES.DEVELOPER),
-  );
+
+  // Existing locators are authoritative, including when the browse link is absent.
+  // Old physical layouts stay intact until the explicit migration step.
+  let externalStorage: { projectDir: string; storageRoot: string } | null =
+    null;
+  const legacyPresent = fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW));
+  try {
+    const existing = readExternalStore(cwd);
+    if (existing) {
+      if (options.project && options.project !== existing.project) {
+        throw new Error(
+          "project is already configured; use explicit migration to change its binding",
+        );
+      }
+      if (typeof options.storage === "string") {
+        const requested = options.storage.replace(
+          /^~(?=$|[/\\])/,
+          os.homedir(),
+        );
+        if (
+          fs.realpathSync(path.resolve(cwd, requested)) !== existing.storageRoot
+        ) {
+          throw new Error(
+            "storage is already configured; use explicit migration to move its data",
+          );
+        }
+      }
+      externalStorage = existing;
+    } else if (options.storage || !legacyPresent) {
+      if (legacyPresent) {
+        throw new Error(
+          "existing .trellis data requires explicit migration before external initialization",
+        );
+      }
+      const storageArg =
+        typeof options.storage === "string"
+          ? options.storage
+          : DEFAULT_STORAGE_ROOT;
+      const project = options.project ?? path.basename(path.resolve(cwd));
+      externalStorage = prepareExternalStorage(storageArg, project, cwd);
+      writeRootConfig(cwd, externalStorage.storageRoot, project);
+    }
+    if (externalStorage) {
+      console.log(
+        chalk.blue("🗄  External storage:"),
+        chalk.gray(externalStorage.projectDir),
+      );
+      const link = createBrowseLink(cwd, externalStorage.projectDir);
+      if (!link.ok)
+        console.warn(
+          chalk.yellow("Could not create browse link: " + link.reason),
+        );
+    }
+  } catch (error) {
+    console.error(
+      chalk.red("Error:"),
+      error instanceof Error ? error.message : String(error),
+    );
+    process.exit(1);
+  }
+
+  const workflowRoot = resolveWorkflowDir(cwd);
+  const isFirstInit = externalStorage
+    ? !fs.existsSync(path.join(workflowRoot, "workflow.md"))
+    : !legacyPresent;
+  const hadDeveloperFileAtStart =
+    !externalStorage &&
+    fs.existsSync(path.join(workflowRoot, FILE_NAMES.DEVELOPER));
 
   // Generate ASCII art banner dynamically using FIGlet "Rebel" font
   const banner = figlet.textSync("Trellis", { font: "Rebel" });
@@ -1188,7 +1321,7 @@ export async function init(options: InitOptions): Promise<void> {
   // empty, the previous init never reached bootstrap creation. Fall through
   // to the full flow so the main-dispatch tasksEmpty fallback fires —
   // handleReinit's joiner branch would otherwise mis-route the recovery.
-  const tasksDirEarly = path.join(cwd, PATHS.TASKS);
+  const tasksDirEarly = path.join(workflowRoot, DIR_NAMES.TASKS);
   const tasksEmptyEarly =
     !fs.existsSync(tasksDirEarly) || fs.readdirSync(tasksDirEarly).length === 0;
   const hasTemplateRequest = !!options.template || !!options.registry;
@@ -1206,12 +1339,19 @@ export async function init(options: InitOptions): Promise<void> {
       developerName,
       pythonCmd,
     );
-    if (reinitDone) return;
+    if (reinitDone) {
+      if (externalStorage) {
+        recordExternalEntrypoints(cwd);
+      }
+      return;
+    }
     // reinitDone === false means user chose "full re-initialize" → fall through
   }
 
-  if (!developerName && !options.yes) {
-    // Ask for developer name if not detected and not in yes mode
+  if (!developerName && !options.yes && !externalStorage) {
+    // Ask for developer name if not detected and not in yes mode.
+    // External single-user mode has no registration step (D6), so the
+    // prompt is skipped entirely.
     console.log(
       chalk.gray(
         "\nTrellis supports team collaboration - each developer has their own\n" +
@@ -1653,7 +1793,7 @@ export async function init(options: InitOptions): Promise<void> {
                 selectedTemplate = customAnswer.template;
 
                 // Check if spec directory already exists and ask what to do
-                const specDir = path.join(cwd, PATHS.SPEC);
+                const specDir = resolveManagedPath(cwd, PATHS.SPEC);
                 if (
                   fs.existsSync(specDir) &&
                   !options.overwrite &&
@@ -1713,7 +1853,7 @@ export async function init(options: InitOptions): Promise<void> {
             selectedTemplate = templateAnswer.template;
 
             // Check if spec directory already exists and ask what to do
-            const specDir = path.join(cwd, PATHS.SPEC);
+            const specDir = resolveManagedPath(cwd, PATHS.SPEC);
             if (
               fs.existsSync(specDir) &&
               !options.overwrite &&
@@ -1829,7 +1969,7 @@ export async function init(options: InitOptions): Promise<void> {
 
     // Ask about existing spec dir in interactive mode
     if (!options.yes && !options.overwrite && !options.append) {
-      const specDir = path.join(cwd, PATHS.SPEC);
+      const specDir = resolveManagedPath(cwd, PATHS.SPEC);
       if (fs.existsSync(specDir)) {
         const actionAnswer = await inquirer.prompt<{
           action: TemplateStrategy;
@@ -1920,6 +2060,7 @@ export async function init(options: InitOptions): Promise<void> {
       packages: monorepoPackages,
       remoteSpecPackages,
       workflowMdOverride,
+      trellisRoot: externalStorage?.projectDir,
     });
 
     // Write monorepo packages to config.yaml (non-destructive patch)
@@ -1928,9 +2069,17 @@ export async function init(options: InitOptions): Promise<void> {
       console.log(chalk.blue("📦 Monorepo packages written to config.yaml"));
     }
 
-    // Write version file for update tracking
-    const versionPath = path.join(cwd, DIR_NAMES.WORKFLOW, ".version");
-    fs.writeFileSync(versionPath, VERSION);
+    // Write version file for update tracking (workflow root, not cwd)
+    const versionPath = path.join(
+      externalStorage?.projectDir ?? path.join(cwd, DIR_NAMES.WORKFLOW),
+      ".version",
+    );
+    writeFileAtomic(versionPath, VERSION);
+    if (externalStorage) {
+      const runtime = runtimeDirOf(cwd);
+      fs.mkdirSync(runtime, { recursive: true });
+      writeFileAtomic(path.join(runtime, ".version"), VERSION);
+    }
 
     // Configure selected tools by copying entire directories (dogfooding)
     for (const tool of tools) {
@@ -1970,10 +2119,16 @@ export async function init(options: InitOptions): Promise<void> {
 
   // Initialize template hashes for modification tracking
   const hashedCount = initializeHashes(cwd, { trackedPaths: writtenPaths });
+  if (externalStorage) {
+    recordExternalEntrypoints(cwd);
+  }
   if (useRemoteTemplate) {
     const specFilesToHash = new Map<string, string>();
     for (const relativePath of collectSpecPaths(cwd)) {
-      const content = fs.readFileSync(path.join(cwd, relativePath), "utf-8");
+      const content = fs.readFileSync(
+        resolveManagedPath(cwd, relativePath),
+        "utf-8",
+      );
       specFilesToHash.set(relativePath, content);
     }
     if (specFilesToHash.size > 0) {
@@ -1992,6 +2147,47 @@ export async function init(options: InitOptions): Promise<void> {
   // "Durable-state contract".
   if (workflowMdOverride !== undefined && workflowId !== NATIVE_WORKFLOW_ID) {
     removeHash(cwd, PATHS.WORKFLOW_GUIDE_FILE);
+  }
+
+  // External storage mode: write the locator config + browse link, then the
+  // first-init bootstrap task (spec bootstrap is kept; joiner onboarding and
+  // init_developer are single-user mode concepts and do not run — D6/AC14).
+  if (externalStorage) {
+    const link = createBrowseLink(cwd, externalStorage.projectDir);
+    if (link.ok) {
+      console.log(chalk.blue("🔗 Created .trellis browse link"));
+    } else {
+      console.warn(
+        chalk.yellow(
+          `⚠ Could not create .trellis browse link (${link.reason}); ` +
+            "the workflow still runs from the external store via the root config",
+        ),
+      );
+    }
+
+    const bootstrapDeveloper =
+      developerName ?? os.userInfo().username ?? "user";
+    const tasksDirExternal = path.join(
+      externalStorage.projectDir,
+      DIR_NAMES.TASKS,
+    );
+    const tasksEmptyExternal =
+      !fs.existsSync(tasksDirExternal) ||
+      fs.readdirSync(tasksDirExternal).length === 0;
+    if (isFirstInit || tasksEmptyExternal) {
+      createBootstrapTask(
+        cwd,
+        bootstrapDeveloper,
+        pythonCmd,
+        projectType,
+        monorepoPackages,
+        externalStorage.projectDir,
+      );
+      console.log(
+        chalk.blue(`✓ Bootstrap task created (${BOOTSTRAP_TASK_NAME})`),
+      );
+    }
+    return;
   }
 
   // Initialize developer identity (silent - no output)
@@ -2072,7 +2268,12 @@ async function createRootFiles(cwd: string): Promise<void> {
   const agentsPath = path.join(cwd, FILE_NAMES.AGENTS);
 
   // Write AGENTS.md from template
-  const agentsWritten = await writeFile(agentsPath, agentsMdContent);
+  const agentsWritten = await writeFile(
+    agentsPath,
+    isExternalMode(cwd)
+      ? renderWorkflowPaths(agentsMdContent, resolveWorkflowDir(cwd))
+      : agentsMdContent,
+  );
   if (agentsWritten) {
     console.log(chalk.blue("📄 Created AGENTS.md"));
   }

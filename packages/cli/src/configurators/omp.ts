@@ -8,6 +8,7 @@ import {
   wrapWithOmpFrontmatter,
 } from "./shared.js";
 import { getExtensionTemplate } from "../templates/omp/index.js";
+import { getExternalStoreBootstrap } from "../templates/shared-hooks/index.js";
 
 /**
  * The OMP file set — written at init and diffed by `trellis update`.
@@ -41,5 +42,9 @@ export function collectOmpTemplates(): Map<string, string> {
     replacePythonCommandLiterals(getExtensionTemplate()),
   );
 
+  files.set(
+    ".omp/extensions/trellis/external-store.js",
+    getExternalStoreBootstrap("js"),
+  );
   return files;
 }

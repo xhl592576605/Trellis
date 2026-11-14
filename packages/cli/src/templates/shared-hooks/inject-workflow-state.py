@@ -80,17 +80,44 @@ If you have not already loaded Trellis context this session, read the `trellis-s
 # CWD-robust Trellis root discovery (fixes hook-path-robustness for this hook)
 # ---------------------------------------------------------------------------
 
-def find_trellis_root(start: Path) -> Optional[Path]:
-    """Walk up from start to find directory containing .trellis/.
+# Root-config filename (the double-l is the user's explicit spelling).
+from typing import TYPE_CHECKING
 
-    Handles CWD drift: subdirectory launches, monorepo packages, etc.
-    Returns None if no .trellis/ found (silent no-op).
+if TYPE_CHECKING:
+    from common.external_store import load_store, render_workflow_paths
+
+# {{EXTERNAL_STORE_BOOTSTRAP}}
+
+CONF_FILENAME = ".treills.conf.json"
+
+
+def _workflow_dir_from_config(root: Path) -> Optional[Path]:
+    """Validate the complete external binding before returning a trusted root."""
+    return load_store(root).project_dir if (root / CONF_FILENAME).is_file() else None
+
+
+
+def find_trellis_root(start: Path) -> Optional[Path]:
+    candidates = [start.resolve(), *start.resolve().parents]
+    for root in candidates:
+        if (root / CONF_FILENAME).is_file():
+            return root
+    return next((root for root in candidates if (root / ".trellis").is_dir()), None)
+
+
+
+def workflow_dir_for(root: Path) -> Optional[Path]:
+    """Workflow data dir: external project dir when configured, else `.trellis`.
+
+    The in-project `.trellis` link is never the execution target in external
+    mode; this returns the real data location so scripts and context are read
+    from where they actually live.
     """
-    cur = start.resolve()
-    while cur != cur.parent:
-        if (cur / ".trellis").is_dir():
-            return cur
-        cur = cur.parent
+    configured = _workflow_dir_from_config(root)
+    if configured is not None:
+        return configured
+    if (root / ".trellis").is_dir():
+        return root / ".trellis"
     return None
 
 
@@ -150,7 +177,10 @@ def _detect_platform(input_data: dict) -> str | None:
 
 
 def _resolve_active_task(root: Path, input_data: dict):
-    scripts_dir = root / ".trellis" / "scripts"
+    wf = workflow_dir_for(root)
+    if wf is None:
+        return None
+    scripts_dir = wf / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     from common.active_task import resolve_active_task  # type: ignore[import-not-found]
@@ -169,12 +199,20 @@ def get_active_task(
     prompt.
     """
     active = _resolve_active_task(root, input_data)
-    if not active.task_path:
+    if active is None or not active.task_path:
         return None
 
     task_dir = Path(active.task_path)
     if not task_dir.is_absolute():
-        task_dir = root / task_dir
+        # Relative refs are stored in the `.trellis/...` display form; the
+        # real location is the workflow dir (external project dir or legacy).
+        wf = workflow_dir_for(root)
+        if wf is None:
+            return None
+        rel = task_dir.as_posix()
+        if rel.startswith(".trellis/"):
+            rel = rel[len(".trellis/"):]
+        task_dir = wf / rel
     if active.stale:
         return task_dir.name, f"stale_{active.source_type}", active.source
 
@@ -215,8 +253,9 @@ def load_breadcrumbs(root: Path) -> dict[str, str]:
     in build_breadcrumb so users see the broken state and fix
     workflow.md, rather than the hook silently masking the issue.
     """
-    workflow = root / ".trellis" / "workflow.md"
-    if not workflow.is_file():
+    wf = workflow_dir_for(root)
+    workflow = (wf / "workflow.md") if wf is not None else None
+    if workflow is None or not workflow.is_file():
         return {}
     try:
         content = workflow.read_text(encoding="utf-8")
@@ -238,7 +277,10 @@ def _read_trellis_config(root: Path) -> dict:
     The helper lives in .trellis/scripts/common; the hook lives outside the
     scripts tree, so we extend sys.path before importing.
     """
-    scripts_dir = root / ".trellis" / "scripts"
+    wf = workflow_dir_for(root)
+    if wf is None:
+        return {}
+    scripts_dir = wf / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     try:
@@ -246,7 +288,7 @@ def _read_trellis_config(root: Path) -> dict:
     except Exception:
         return {}
     try:
-        return read_trellis_config(root)
+        return read_trellis_config(root, trellis_dir=wf)
     except Exception:
         return {}
 
@@ -382,6 +424,9 @@ def main() -> int:
             parts.append(CODEX_NO_TASK_BOOTSTRAP_NOTICE)
         parts.append(breadcrumb)
         breadcrumb = "\n\n".join(parts)
+
+    if (root / CONF_FILENAME).is_file():
+        breadcrumb = render_workflow_paths(breadcrumb, load_store(root).project_dir)
 
     # Kiro (CLI userPromptSubmit / IDE promptSubmit) adds a hook's stdout
     # directly to the conversation context — no JSON envelope. Emit the bare

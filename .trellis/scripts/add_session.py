@@ -50,6 +50,8 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Callable
+from functools import wraps
 from datetime import datetime
 from pathlib import Path
 
@@ -61,12 +63,24 @@ from common.paths import (
     get_current_task,
     get_developer,
     get_workspace_dir,
+    workflow_dir,
+    resolve_task_ref,
 )
 from common.developer import ensure_developer
 from common.git import branch_exists_locally, run_git
-from common.io import write_text_atomic
+from common.io import read_json_checked, write_json, write_text_atomic
 from common.log import Colors, colored
+from common.data_git import (
+    data_git_context,
+    pending_commit_owner,
+    read_pending_commits,
+    remove_pending_commit,
+    storage_commit_lock,
+)
 from common.safe_commit import (
+    ARCHIVE_COMMIT_DONE,
+    ARCHIVE_COMMIT_SKIPPED,
+    commit_task_archive,
     print_gitignore_warning,
     safe_git_add,
     safe_trellis_paths_to_add,
@@ -99,6 +113,9 @@ MARKER_VERSION = 2
 LEGACY_MARKER_RE = re.compile(r"^<!-- trellis-session: fp=([0-9a-f]{16}) -->$")
 ENTRY_DATE_RE = re.compile(r"^\*\*Date\*\*: (\d{4}-\d{2}-\d{2})\s*$")
 SESSION_HEADING_RE = re.compile(r"^## Session (\d+):", re.MULTILINE)
+# Any record marker line (v1 or v2) — used to detect OTHER sessions'
+# uncommitted records sharing the journal files.
+MARKER_ANY_RE = re.compile(r"<!-- trellis-session:[^>]*-->")
 
 # Recording states, in the order the operation walks them.
 STATE_ABSENT = "absent"
@@ -111,6 +128,10 @@ COMMIT_DONE = "committed"
 COMMIT_SKIPPED = "skipped"
 COMMIT_BLOCKED = "blocked"
 COMMIT_FAILED = "failed"
+# The journal/index hold uncommitted records from ANOTHER session. The
+# files are shared, so committing them whole would attribute someone
+# else's pending record to this commit (design §7: never mix; AC6).
+COMMIT_MIXED = "mixed"
 
 # Git probes against other refs are best-effort; never let one hang a session.
 GIT_PROBE_TIMEOUT = 15.0
@@ -301,6 +322,13 @@ def create_new_journal_file(
     prev_num = num - 1
     new_file = dev_dir / f"{FILE_JOURNAL_PREFIX}{num}.md"
 
+    # The workspace dir exists in legacy layouts (init_developer creates it);
+    # single-user external mode bootstraps it lazily here.
+    try:
+        dev_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+
     content = f"""# Journal - {developer} (Part {num})
 
 > Continuation from `{FILE_JOURNAL_PREFIX}{prev_num}.md` (archived at ~{max_lines} lines)
@@ -371,6 +399,10 @@ def parse_subject_overrides(values: list[str] | None) -> tuple[dict[str, str], s
 
 def resolve_commit_subject(repo_root: Path, oid: str) -> str | None:
     """Resolve one OID to its subject from the local object database.
+
+    Runs against the CODE repository (``repo_root``): --commit evidence
+    names code commits, and in external mode the storage repository does
+    not hold those objects at all (design §7 two-repository split).
 
     Passed as argv (never interpolated into a shell) and peeled with
     ``^{commit}`` so a hex-looking ref name cannot resolve to a tree or tag.
@@ -526,15 +558,20 @@ def render_legacy_marker(fingerprint: str) -> str:
 # Session numbering (collision-proof across concurrent branches)
 # =============================================================================
 
-def _repo_relative(repo_root: Path, path: Path) -> str | None:
+def _repo_relative(root: Path, path: Path) -> str | None:
+    """Path relative to ``root`` (the data git root), or None when outside."""
     try:
-        return path.resolve().relative_to(repo_root.resolve()).as_posix()
+        return path.resolve().relative_to(root.resolve()).as_posix()
     except (OSError, ValueError):
         return None
 
 
-def _default_branch_local(repo_root: Path) -> str | None:
+def _default_branch_local(git_root: Path) -> str | None:
     """Resolve the default branch without ever touching the network.
+
+    Runs against the DATA repository (storage root in external mode): the
+    journal history whose session numbers must converge lives there, not in
+    the code checkout.
 
     `resolve_default_branch()` falls back to `git remote show origin`, which
     can block on a fetch. Session recording is a hot path, so it stops at the
@@ -542,18 +579,18 @@ def _default_branch_local(repo_root: Path) -> str | None:
     """
     rc, out, _ = run_git(
         ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
-        cwd=repo_root,
+        cwd=git_root,
         timeout=GIT_PROBE_TIMEOUT,
     )
     if rc == 0 and out.strip():
         return out.strip().rsplit("/", 1)[-1]
     for candidate in ("main", "master"):
-        if branch_exists_locally(candidate, repo_root):
+        if branch_exists_locally(candidate, git_root):
             return candidate
     return None
 
 
-def _convergence_refs(repo_root: Path) -> list[str]:
+def _convergence_refs(git_root: Path) -> list[str]:
     """Refs whose recorded workspace state must be folded into the counter.
 
     Ordered by how much they matter, then capped: HEAD and the default branch
@@ -567,15 +604,15 @@ def _convergence_refs(repo_root: Path) -> list[str]:
         if ref not in refs:
             refs.append(ref)
 
-    rc, _, _ = run_git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=repo_root)
+    rc, _, _ = run_git(["rev-parse", "--verify", "--quiet", "HEAD"], cwd=git_root)
     if rc == 0:
         add("HEAD")
 
-    default = _default_branch_local(repo_root)
+    default = _default_branch_local(git_root)
     if default:
         for ref in (f"refs/heads/{default}", f"refs/remotes/origin/{default}"):
             rc, _, _ = run_git(
-                ["show-ref", "--verify", "--quiet", ref], cwd=repo_root
+                ["show-ref", "--verify", "--quiet", ref], cwd=git_root
             )
             if rc == 0:
                 add(ref)
@@ -583,7 +620,7 @@ def _convergence_refs(repo_root: Path) -> list[str]:
     for pattern in ("refs/heads/", "refs/remotes/"):
         rc, out, _ = run_git(
             ["for-each-ref", "--format=%(refname)", pattern],
-            cwd=repo_root,
+            cwd=git_root,
             timeout=GIT_PROBE_TIMEOUT,
         )
         if rc != 0:
@@ -598,7 +635,7 @@ def _convergence_refs(repo_root: Path) -> list[str]:
     return refs[:MAX_CONVERGENCE_REFS]
 
 
-def _max_session_across_refs(repo_root: Path, refs: list[str], dev_rel: str) -> int:
+def _max_session_across_refs(git_root: Path, refs: list[str], dev_rel: str) -> int:
     """Highest session number recorded under `dev_rel` in any of `refs`.
 
     One `git grep` over every ref rather than an ls-tree + show per ref: the
@@ -621,7 +658,7 @@ def _max_session_across_refs(repo_root: Path, refs: list[str], dev_rel: str) -> 
         ]
         + refs
         + ["--", dev_rel],
-        cwd=repo_root,
+        cwd=git_root,
         timeout=GIT_PROBE_TIMEOUT,
     )
     if rc > 1 or not out:
@@ -655,19 +692,20 @@ def resolve_next_session(repo_root: Path, dev_dir: Path, index_file: Path) -> in
 
     Deriving the number from the working tree alone lets two branches that
     each record before merging claim the same number (observed twice on
-    2026-08-06). Taking the union with every recorded ref — the default
-    branch, and the other local heads a parallel worktree records on — makes
-    the number monotonic across concurrent branches; `journal-*.md`
-    merge=union then keeps both entries when the branches meet.
+    2026-08-06). Taking the union with every recorded ref — in the DATA
+    repository that owns the journals — makes the number monotonic across
+    concurrent branches; `journal-*.md` merge=union then keeps both entries
+    when the branches meet.
     """
     highest = max_local_session(dev_dir, index_file)
 
-    dev_rel = _repo_relative(repo_root, dev_dir)
+    ctx = data_git_context(repo_root)
+    dev_rel = _repo_relative(ctx.git_root, dev_dir)
     if dev_rel:
         highest = max(
             highest,
             _max_session_across_refs(
-                repo_root, _convergence_refs(repo_root), dev_rel
+                ctx.git_root, _convergence_refs(ctx.git_root), dev_rel
             ),
         )
 
@@ -709,16 +747,17 @@ def find_marker_entries(dev_dir: Path, marker: str) -> list[tuple[Path, int | No
 def content_at_head(repo_root: Path, path: Path) -> str | None:
     """File content as committed at HEAD, or None when it isn't there.
 
-    The `./` prefix makes the path cwd-relative. `HEAD:<path>` alone is
-    relative to the *git* toplevel, which is not always `repo_root` — the
-    Trellis root is the nearest directory holding `.trellis/`, which can sit
-    below the git root. Without it, every lookup in that layout fails and a
-    committed record looks pending.
+    HEAD is read in the DATA repository (the storage root in external mode)
+    — that is where journal/index history lives. The `./` prefix makes the
+    path cwd-relative; `HEAD:<path>` alone is relative to the *git*
+    toplevel, which is not always the cwd — without the prefix, every
+    lookup in that layout fails and a committed record looks pending.
     """
-    rel = _repo_relative(repo_root, path)
+    ctx = data_git_context(repo_root)
+    rel = _repo_relative(ctx.git_root, path)
     if not rel:
         return None
-    rc, out, _ = run_git(["show", f"HEAD:./{rel}"], cwd=repo_root)
+    rc, out, _ = run_git(["show", f"HEAD:./{rel}"], cwd=ctx.git_root)
     return out if rc == 0 else None
 
 
@@ -1067,36 +1106,211 @@ def update_index(
 # Main Function
 # =============================================================================
 
-def _auto_commit_workspace(repo_root: Path) -> str:
+def _workspace_snapshot(dev_dir: Path | None) -> dict[str, str]:
+    """Exact hashes of shared journal/index leaves, including unmarked edits."""
+    if dev_dir is None or not dev_dir.is_dir():
+        return {}
+    files = [*dev_dir.glob(f"{FILE_JOURNAL_PREFIX}*.md"), dev_dir / "index.md"]
+    return {f.name: hashlib.sha256(f.read_bytes()).hexdigest()
+            for f in files if f.is_file()}
+
+
+def _workspace_commit_state(repo_root: Path, marker: str) -> Path:
+    key = hashlib.sha256(marker.encode("utf-8")).hexdigest()
+    return workflow_dir(repo_root) / ".runtime" / "journal-commits" / f"{key}.json"
+
+
+def _verify_workspace_ownership(repo_root: Path, marker: str | None) -> bool:
+    """A retry may commit only bytes produced from a clean baseline by this record."""
+    if marker is None or not data_git_context(repo_root).is_external:
+        return True
+    checkpoint = _workspace_commit_state(repo_root, marker)
+    if not checkpoint.exists():
+        return True  # pre-checkpoint records still have the marker guard
+    state, reason = read_json_checked(checkpoint)
+    if state is None:
+        print(f"[BLOCKED] Invalid journal ownership checkpoint: {reason}", file=sys.stderr)
+        return False
+    ws = get_workspace_dir(repo_root)
+    actual = _workspace_snapshot(ws)
+    if ws is not None and all(
+        content_at_head(repo_root, ws / name) == (ws / name).read_text(encoding="utf-8")
+        for name in actual
+    ):
+        return True  # a human already resolved and committed the shared file
+    if state.get("dirty_before") or state.get("expected") != actual:
+        print("[BLOCKED] Shared workspace has mixed/unowned edits (including unmarked content); "
+              "review and commit the shared files manually before retrying.", file=sys.stderr)
+        return False
+    return True
+
+
+def _foreign_pending_markers(
+    repo_root: Path,
+    dev_dir: Path | None,
+    own_marker: str | None,
+) -> list[str]:
+    """Record markers pending in the worktree that are neither at HEAD nor ours.
+
+    The journal files are shared across tasks and sessions. A marker that is
+    in the worktree but not in the HEAD copy belongs to another session whose
+    commit never landed. Committing the whole file would attribute that
+    record to OUR commit (design §7 / AC6) — the caller must refuse.
+
+    A retry of our OWN pending record is the legitimate exception, which is
+    why ``own_marker`` is exempt.
+    """
+    if dev_dir is None or not dev_dir.is_dir():
+        return []
+    foreign: list[str] = []
+    for journal in sorted(dev_dir.glob(f"{FILE_JOURNAL_PREFIX}*.md")):
+        if not journal.is_file():
+            continue
+        try:
+            work = journal.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        markers = set(MARKER_ANY_RE.findall(work))
+        if not markers:
+            continue
+        committed = set(MARKER_ANY_RE.findall(content_at_head(repo_root, journal) or ""))
+        for marker in sorted(markers - committed):
+            if marker != own_marker and marker not in foreign:
+                foreign.append(marker)
+    return foreign
+
+
+def _print_mixed_checkpoint(foreign: list[str]) -> None:
+    print("", file=sys.stderr)
+    print(
+        f"[BLOCKED] Checkpoint: the journal holds {len(foreign)} uncommitted "
+        "record(s) from another session. Committing the shared file now "
+        "would attribute their entries to this commit.",
+        file=sys.stderr,
+    )
+    print(
+        "[BLOCKED] This session's record was written and is preserved; only "
+        "the commit is deferred.",
+        file=sys.stderr,
+    )
+    print(
+        "[BLOCKED] Resolve by hand: review the pending entries, then commit "
+        "the journal files yourself (e.g. `git add <workspace files> && "
+        "git commit`). Afterwards re-run the identical add_session.py "
+        "command — it resumes at the commit step and will not add a second "
+        "session.",
+        file=sys.stderr,
+    )
+
+
+def _flush_pending_task_commits(
+    repo_root: Path, recover_archives: list[str] | None = None,
+) -> bool:
+    """Retry archive commits that moved on disk but never landed in git.
+
+    Reads the recovery state persisted by ``task.py archive`` and re-runs
+    the exact same scoped commit for each entry. Runs inside the caller's
+    storage commit lock; an entry is removed only after its commit lands,
+    so a repeated failure leaves the recovery state intact for the next
+    retry (D7: no moved task is ever lost between states).
+    """
+    entries = read_pending_commits(repo_root)
+    for entry in entries:
+        task = entry.get("task")
+        if (entry.get("owner") != pending_commit_owner(repo_root)
+                and task not in (recover_archives or [])):
+            print(f"[NOTE] Pending archive '{task}' belongs to another session; left untouched. "
+                  "To explicitly resume it use --require-commit --recover-archive <task>.", file=sys.stderr)
+            continue
+        if not isinstance(task, str) or not task:
+            continue
+        children = entry.get("modified_children")
+        modified_children = (
+            [str(c) for c in children if isinstance(c, str)]
+            if isinstance(children, list)
+            else None
+        )
+        print(
+            f"[RECOVERY] Retrying pending archive commit for task '{task}'...",
+            file=sys.stderr,
+        )
+        dest = entry.get("dest")
+        if not isinstance(dest, str) or not dest:
+            print("[BLOCKED] Pending archive has no exact destination.", file=sys.stderr)
+            return False
+        outcome, err = commit_task_archive(
+            repo_root, task, modified_children, archive_ref=f"{DIR_WORKFLOW}/{dest}"
+        )
+        if outcome in (ARCHIVE_COMMIT_DONE, ARCHIVE_COMMIT_SKIPPED):
+            remove_pending_commit(repo_root, task)
+            continue
+        print(
+            f"[BLOCKED] Pending archive commit for '{task}' still failing: "
+            f"{err.strip() if err else 'unknown error'}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _auto_commit_workspace(
+    repo_root: Path,
+    require_commit: bool = False,
+    include_paths: list[str] | None = None,
+    own_marker: str | None = None,
+    recover_archives: list[str] | None = None,
+) -> str:
     """Stage Trellis-owned workspace + current-task paths and commit.
 
     Path scope is restricted to specific products: the current developer's
-    journal files + index.md, and ONLY the current task directory (resolved
-    via ``get_current_task``). We never `git add` the whole `.trellis/` tree
-    or iterate over all active task dirs (#303: parallel-window dirty task
-    dirs must not be bundled into the session auto-commit). If `.gitignore`
-    blocks the specific paths we warn + skip — never retry with ``-f``.
+    journal files + index.md, ONLY the current task directory (resolved
+    via ``get_current_task``), plus any explicitly declared data paths
+    (``--include-path`` — e.g. spec files edited this session). We never
+    `git add` the whole `.trellis/` tree or iterate over all active task
+    dirs (#303: parallel-window dirty task dirs must not be bundled into
+    the session auto-commit). If `.gitignore` blocks the specific paths we
+    warn + skip — never retry with ``-f``.
 
-    Honors ``session_auto_commit`` in ``.trellis/config.yaml``: when set to
-    ``false``, this function returns immediately without touching git
-    (journal/index files are still written to disk by the caller).
+    All git operations run in the DATA repository (the storage root in
+    external mode) under the storage commit lock, and archive commits
+    still pending from a failed `task.py archive` are retried first, so
+    history keeps its order: archive commits before journal commits.
+
+    ``require_commit`` is the finish-work final-step contract (D7): when
+    set, ``session_auto_commit: false`` no longer skips the commit — the
+    task is not finished until this data is committed, so the flag says so
+    out loud and commits anyway instead of silently reporting success.
 
     Returns one of ``COMMIT_DONE`` / ``COMMIT_SKIPPED`` / ``COMMIT_BLOCKED`` /
-    ``COMMIT_FAILED``. ``COMMIT_BLOCKED`` is the gitignored-`.trellis/` case:
-    the user has told git to stay out of this tree, so it is a configured skip
-    like ``session_auto_commit: false``, not a failure to retry.
+    ``COMMIT_FAILED`` / ``COMMIT_MIXED``. ``COMMIT_BLOCKED`` is the
+    gitignored-`.trellis/` case: the user has told git to stay out of this
+    tree, so it is a configured skip like ``session_auto_commit: false``,
+    not a failure to retry. ``COMMIT_MIXED`` means another session's
+    uncommitted record shares the journal files.
     """
-    if not get_session_auto_commit(repo_root):
+    auto_commit_enabled = get_session_auto_commit(repo_root)
+    if not auto_commit_enabled and not require_commit:
         print(
             "[OK] session_auto_commit: false — skipping git stage/commit.",
             file=sys.stderr,
         )
         return COMMIT_SKIPPED
+    if not auto_commit_enabled and require_commit:
+        print(
+            "[OK] session_auto_commit: false — overridden by --require-commit "
+            "(finish-work final requirement: this task's external changes "
+            "must be committed before it counts as finished).",
+            file=sys.stderr,
+        )
+
+    ctx = data_git_context(repo_root)
 
     # Not a git repository at all: like the gitignored case, this is an
     # environment the user configured, not a transient git error — a retry
     # can never succeed, so it must not be COMMIT_FAILED's exit-1 loop.
-    rc, _, _ = run_git(["rev-parse", "--is-inside-work-tree"], cwd=repo_root)
+    rc, _, _ = run_git(
+        ["rev-parse", "--is-inside-work-tree"], cwd=ctx.git_root
+    )
     if rc != 0:
         print(
             "[WARN] Not a git repository — journal/index written, "
@@ -1114,53 +1328,133 @@ def _auto_commit_workspace(repo_root: Path) -> str:
         paths = safe_trellis_paths_to_add(repo_root, task_name=task_name)
     else:
         # Current task unknown (0 or >=2 parallel sessions — exactly the
-        # parallel-window case #303 is about). Do NOT fall back to the wide
-        # `tasks_dir.iterdir()` scan; that would re-leak other tasks' dirty
-        # dirs into the session commit. Stage only the developer's journal/
+        # parallel-window case #303 is about, or the session pointer was
+        # cleared by task.py archive and the pending-commit recovery above
+        # covers the archived paths). Do NOT fall back to the wide
+        # `tasks_dir.iterdir()` scan; stage only the developer's journal/
         # index and skip every task dir.
         paths = [
             p
             for p in safe_trellis_paths_to_add(repo_root, task_name=None)
             if not p.startswith(f"{DIR_WORKFLOW}/{DIR_TASKS}/")
         ]
-    if not paths:
-        print("[OK] No workspace changes to commit.", file=sys.stderr)
-        return COMMIT_SKIPPED
 
-    success, _, err = safe_git_add(paths, repo_root)
-    if not success:
-        if err and "ignored by" in err.lower():
-            print_gitignore_warning(paths)
-            return COMMIT_BLOCKED
+    # Explicitly declared data files edited this session (spec/research
+    # outside the task dir). Attribution comes from the caller's explicit
+    # list — never from scanning the project for dirty files.
+    for ref in include_paths or []:
+        logical = _resolve_include_ref(repo_root, ref)
+        if logical is None:
+            print(
+                f"Error: --include-path '{ref}' does not resolve to a file "
+                "inside this project's Trellis data directory.",
+                file=sys.stderr,
+            )
+            return COMMIT_FAILED
+        if logical not in paths:
+            paths.append(logical)
+
+    with storage_commit_lock(ctx):
+        # Recovery first: archives that moved but never committed must land
+        # BEFORE this journal commit so history keeps its order.
+        if not _flush_pending_task_commits(repo_root, recover_archives):
+            return COMMIT_FAILED
+
+        # Final commits obey the same attribution boundary even when the
+        # ordinary automatic-commit switch is off. A different pending
+        # marker is not evidence that the record belongs to this task.
+        if not _verify_workspace_ownership(repo_root, own_marker):
+            return COMMIT_MIXED
+        dev_dir = get_workspace_dir(repo_root)
+        foreign = _foreign_pending_markers(repo_root, dev_dir, own_marker)
+        if foreign:
+            _print_mixed_checkpoint(foreign)
+            return COMMIT_MIXED
+
+        if not paths:
+            print("[OK] No workspace changes to commit.", file=sys.stderr)
+            return COMMIT_SKIPPED
+
+        success, _, err = safe_git_add(paths, repo_root)
+        if not success:
+            if err and "ignored by" in err.lower():
+                print_gitignore_warning(paths)
+                return COMMIT_BLOCKED
+            print(
+                f"[WARN] git add failed: {err.strip() if err else 'unknown error'}",
+                file=sys.stderr,
+            )
+            return COMMIT_FAILED
+
+        specs = [f":(literal){ctx.to_pathspec(p)}" for p in paths]
+        # Check if there are staged changes for the paths we just staged.
+        rc, _, _ = run_git(
+            ["diff", "--cached", "--quiet", "--", *specs], cwd=ctx.git_root
+        )
+        if rc == 0:
+            print("[OK] No workspace changes to commit.", file=sys.stderr)
+            return COMMIT_SKIPPED
+
+        # Commit with an explicit pathspec: a bare `git commit` would sweep any
+        # unrelated entries the developer had staged before this script ran into
+        # the chore commit (#579). The pathspec keeps their staged work untouched.
+        rc, _, commit_err = run_git(
+            ["commit", "-m", commit_msg, "--", *specs], cwd=ctx.git_root
+        )
+        if rc == 0:
+            where = (
+                f" in storage repository ({ctx.git_root})"
+                if ctx.is_external
+                else ""
+            )
+            print(f"[OK] Auto-committed{where}: {commit_msg}", file=sys.stderr)
+            return COMMIT_DONE
+
         print(
-            f"[WARN] git add failed: {err.strip() if err else 'unknown error'}",
+            f"[WARN] Auto-commit failed: {commit_err.strip()}",
             file=sys.stderr,
         )
         return COMMIT_FAILED
 
-    # Check if there are staged changes for the paths we just staged.
-    rc, _, _ = run_git(
-        ["diff", "--cached", "--quiet", "--", *paths], cwd=repo_root
-    )
-    if rc == 0:
-        print("[OK] No workspace changes to commit.", file=sys.stderr)
-        return COMMIT_SKIPPED
 
-    # Commit with an explicit pathspec: a bare `git commit` would sweep any
-    # unrelated entries the developer had staged before this script ran into
-    # the chore commit (#579). The pathspec keeps their staged work untouched.
-    rc, _, commit_err = run_git(
-        ["commit", "-m", commit_msg, "--", *paths], cwd=repo_root
-    )
-    if rc == 0:
-        print(f"[OK] Auto-committed: {commit_msg}", file=sys.stderr)
-        return COMMIT_DONE
+def _resolve_include_ref(repo_root: Path, ref: str) -> str | None:
+    """Validate one --include-path ref into a logical ``.trellis/...`` path.
 
-    print(
-        f"[WARN] Auto-commit failed: {commit_err.strip()}",
-        file=sys.stderr,
-    )
-    return COMMIT_FAILED
+    Accepts either the logical form (``.trellis/spec/cli/guide.md``) or a
+    bare data-relative form (``spec/cli/guide.md``); both resolve inside
+    the CURRENT project's data directory only. Returns None when the ref
+    escapes that boundary or does not exist on disk.
+    """
+    normalized = ref.replace("\\", "/").strip()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized == DIR_WORKFLOW:
+        return None
+    if normalized.startswith(f"{DIR_WORKFLOW}/"):
+        normalized = normalized[len(DIR_WORKFLOW) + 1 :]
+    parts = normalized.split("/")
+    if (not normalized or any(p in ("", ".", "..", ".runtime", "__pycache__", ".cache", "worktrees")
+                              or p.startswith(".backup-") for p in parts)):
+        return None
+
+    try:
+        boundary = workflow_dir(repo_root).resolve()
+        real = (boundary / normalized).resolve()
+    except (OSError, RuntimeError):
+        return None
+    if real != boundary and boundary not in real.parents:
+        return None
+    if real.is_dir() or (real.exists() and not real.is_file()):
+        return None
+    if not real.exists():
+        # Explicitly named tracked deletions are part of a task too. Never
+        # turn a missing directory into a recursive Git pathspec.
+        ctx = data_git_context(repo_root)
+        spec = ctx.to_pathspec(normalized)
+        rc, tracked, _ = run_git(["ls-files", "--", f":(literal){spec}"], cwd=ctx.git_root)
+        if rc != 0 or spec not in tracked.splitlines():
+            return None
+    return f"{DIR_WORKFLOW}/{normalized}"
 
 
 def _print_commit_checkpoint(session_num: int, journal_name: str) -> None:
@@ -1184,6 +1478,42 @@ def _print_commit_checkpoint(session_num: int, journal_name: str) -> None:
     )
 
 
+def _serialize_workspace(record: Callable[..., int]) -> Callable[..., int]:
+    """Serialize shared journal read/modify/write and checkpoint recovery."""
+    @wraps(record)
+    def locked(*args: object, **kwargs: object) -> int:
+        root = get_repo_root()
+        if not (root / ".treills.conf.json").is_file():
+            return record(*args, **kwargs)
+        # This lock is project-wide, rather than checkout/session-scoped. OS
+        # file locks release on process exit so a crash leaves no stale owner.
+        lock_path = workflow_dir(root) / ".runtime" / "workspace.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as handle:
+            if sys.platform == "win32":
+                import msvcrt
+                if handle.tell() == 0:
+                    handle.write(b"\0")
+                    handle.flush()
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                return record(*args, **kwargs)
+            finally:
+                if sys.platform == "win32":
+                    import msvcrt
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return locked
+
+
+@_serialize_workspace
 def add_session(
     title: str,
     commit: str = "-",
@@ -1197,10 +1527,14 @@ def add_session(
     branch: str | None = None,
     commit_subjects: list[str] | None = None,
     idempotency_key: str | None = None,
+    require_commit: bool = False,
+    include_paths: list[str] | None = None,
+    recover_archives: list[str] | None = None,
 ) -> int:
     """Add a new session, resuming an interrupted one instead of duplicating it."""
     repo_root = get_repo_root()
     warn_if_parallel_worktree(repo_root)
+    initial_workspace = _workspace_snapshot(get_workspace_dir(repo_root))
     ensure_developer(repo_root)
 
     developer = get_developer(repo_root)
@@ -1209,7 +1543,14 @@ def add_session(
         return 1
 
     dev_dir = get_workspace_dir(repo_root)
-    if not dev_dir:
+    if (repo_root / ".treills.conf.json").is_file() or dev_dir is None or not dev_dir.is_dir():
+        # Single-user external mode with no workspace yet: bootstrap the
+        # flat journal/index structure now (legacy mode already failed the
+        # developer check above).
+        from common.developer import ensure_workspace
+
+        dev_dir = ensure_workspace(repo_root, developer)
+    if not dev_dir or not dev_dir.is_dir():
         print("Error: Workspace directory not found", file=sys.stderr)
         return 1
 
@@ -1264,6 +1605,16 @@ def add_session(
         return 1
 
     if state == STATE_COMMITTED and idempotency_key:
+        # A committed record is finished, but finish-work's final step must
+        # still not report success while an archive commit is pending
+        # (D7): the journal having landed does not imply the archive did.
+        if auto_commit and require_commit:
+            outcome = _auto_commit_workspace(
+                repo_root, require_commit=True, include_paths=include_paths,
+                own_marker=marker, recover_archives=recover_archives,
+            )
+            if outcome not in (COMMIT_DONE, COMMIT_SKIPPED):
+                return 1
         print(
             f"[OK] Session {matched_num} with idempotency key "
             f"'{idempotency_key}' is already recorded and committed in "
@@ -1292,6 +1643,29 @@ def add_session(
         )
         if classify_error:
             print(f"Error: {classify_error}", file=sys.stderr)
+            return 1
+
+    checkpoint: Path | None = None
+    ownership: dict = {}
+    if data_git_context(repo_root).is_external:
+        checkpoint = _workspace_commit_state(repo_root, marker)
+        if checkpoint.exists():
+            loaded, reason = read_json_checked(checkpoint)
+            if loaded is None:
+                print(f"[BLOCKED] Invalid journal ownership checkpoint: {reason}", file=sys.stderr)
+                return 1
+            ownership = loaded
+            if ownership.get("expected") != _workspace_snapshot(dev_dir):
+                ownership["dirty_before"] = True
+        else:
+            dirty = any(
+                content_at_head(repo_root, dev_dir / name) !=
+                (dev_dir / name).read_text(encoding="utf-8")
+                for name in initial_workspace
+            )
+            ownership = {"dirty_before": dirty, "expected": _workspace_snapshot(dev_dir)}
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        if not write_json(checkpoint, ownership):
             return 1
 
     print("========================================", file=sys.stderr)
@@ -1344,8 +1718,16 @@ def add_session(
             print(f"Created: {target_file}", file=sys.stderr)
 
         if target_file is None:
+            # No journal file yet. Legacy layouts get one from init_developer;
+            # single-user external mode has no registration step, so bootstrap
+            # journal-1.md here (D6 / AC5).
+            target_num = max(current_num, 1)
+            target_file = create_new_journal_file(
+                dev_dir, target_num, developer, today, max_lines
+            )
+        if target_file is None:
             print(
-                "Error: no journal file to append to. Run init_developer.py first.",
+                "Error: no journal file to append to and journal creation failed.",
                 file=sys.stderr,
             )
             return 1
@@ -1363,6 +1745,10 @@ def add_session(
                 file=sys.stderr,
             )
             return 1
+        if checkpoint is not None:
+            ownership["expected"] = _workspace_snapshot(dev_dir)
+            if not write_json(checkpoint, ownership):
+                return 1
         print(f"[OK] Appended session to {target_file.name}", file=sys.stderr)
         state = STATE_JOURNAL_RECORDED
     else:
@@ -1407,13 +1793,17 @@ def add_session(
                 file=sys.stderr,
             )
             return 1
+        if checkpoint is not None:
+            ownership["expected"] = _workspace_snapshot(dev_dir)
+            if not write_json(checkpoint, ownership):
+                return 1
         state = STATE_INDEX_RECORDED
     else:
         print(f"[OK] index.md already records session {new_session}.", file=sys.stderr)
 
     print("", file=sys.stderr)
     print("========================================", file=sys.stderr)
-    print(f"[OK] Session {new_session} added successfully!", file=sys.stderr)
+    print(f"[OK] Session {new_session} recorded on disk.", file=sys.stderr)
     print("========================================", file=sys.stderr)
     print("", file=sys.stderr)
     print("Files updated:", file=sys.stderr)
@@ -1427,12 +1817,23 @@ def add_session(
         return 0
 
     print("", file=sys.stderr)
-    outcome = _auto_commit_workspace(repo_root)
+    outcome = _auto_commit_workspace(
+        repo_root,
+        require_commit=require_commit,
+        include_paths=include_paths,
+        own_marker=marker, recover_archives=recover_archives,
+    )
 
-    if outcome == COMMIT_FAILED:
+    if outcome == COMMIT_FAILED or (require_commit and outcome == COMMIT_BLOCKED):
         _print_commit_checkpoint(
             new_session, target_file.name if target_file else "the journal"
         )
+        return 1
+
+    if outcome == COMMIT_MIXED:
+        # The mixed-shared-file checkpoint was already printed by
+        # _auto_commit_workspace; the exit code makes "unfinished" visible
+        # to finish-work instead of a silent partial success (AC6).
         return 1
 
     if outcome == COMMIT_DONE and target_file is not None:
@@ -1493,10 +1894,41 @@ def main() -> int:
     )
     parser.add_argument("--no-commit", action="store_true",
                         help="Skip auto-commit of workspace changes")
+    parser.add_argument(
+        "--require-commit",
+        action="store_true",
+        help=(
+            "Finish-work final step: the session's external data changes "
+            "MUST be committed before the task counts as finished. Overrides "
+            "session_auto_commit: false for this invocation and retries any "
+            "pending archive commit left by a failed task.py archive."
+        ),
+    )
+    parser.add_argument(
+        "--include-path",
+        action="append",
+        metavar="REF",
+        default=[],
+        help=(
+            "Trellis data file edited this session to include in the journal "
+            "commit (repeatable), e.g. --include-path .trellis/spec/cli/guide.md. "
+            "Explicit declaration only — dirty files are never discovered by "
+            "scanning."
+        ),
+    )
+    parser.add_argument(
+        "--recover-archive", action="append", default=[], metavar="TASK",
+        help="Explicitly retry this pending archive from an earlier session (repeatable; requires --require-commit).",
+    )
     parser.add_argument("--stdin", action="store_true",
                         help="Read extra content from stdin (explicit opt-in)")
 
     args = parser.parse_args()
+
+    if args.no_commit and args.require_commit:
+        parser.error("--require-commit cannot be combined with --no-commit")
+    if args.recover_archive and not args.require_commit:
+        parser.error("--recover-archive requires --require-commit")
 
     extra_content: str | None = None
     if args.content_file:
@@ -1509,7 +1941,8 @@ def main() -> int:
     # Load active task once — shared by package and branch resolution
     repo_root = get_repo_root()
     current = get_current_task(repo_root)
-    task_data = load_task(repo_root / current) if current else None
+    task_path = resolve_task_ref(current, repo_root) if current else None
+    task_data = load_task(task_path) if task_path is not None else None
 
     package = args.package
     if package:
@@ -1538,6 +1971,9 @@ def main() -> int:
         branch=branch,
         commit_subjects=args.commit_subject,
         idempotency_key=args.idempotency_key,
+        require_commit=args.require_commit,
+        include_paths=args.include_path,
+        recover_archives=args.recover_archive,
     )
 
 

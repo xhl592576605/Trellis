@@ -40,6 +40,7 @@ describe("journal-*.md merge=union gitattributes rule", () => {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-gitattr-merge-"));
     gitOk(tmp, "init", "-q", "-b", "main");
     gitOk(tmp, "config", "user.email", "test@example.com");
+    gitOk(tmp, "config", "core.excludesFile", "/dev/null");
     gitOk(tmp, "config", "user.name", "Test");
 
     fs.copyFileSync(GITATTRIBUTES_TEMPLATE, path.join(tmp, ".gitattributes"));

@@ -373,6 +373,7 @@ ${separator}
 
   function createLocalBranch(branch: string): void {
     execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config core.excludesFile /dev/null", { cwd: tmpDir });
     execSync("git config user.name Test", { cwd: tmpDir });
     execSync("git commit --allow-empty -q -m init", { cwd: tmpDir });
     execSync(`git branch ${JSON.stringify(branch)}`, { cwd: tmpDir });
@@ -2547,6 +2548,7 @@ describe("regression: issue #252 polyrepo Git context", () => {
     fs.mkdirSync(repoPath, { recursive: true });
     execSync("git init -q", { cwd: repoPath });
     execSync("git config user.email test@example.com", { cwd: repoPath });
+    execSync("git config core.excludesFile /dev/null", { cwd: repoPath });
     execSync("git config user.name Test", { cwd: repoPath });
     fs.writeFileSync(path.join(repoPath, "README.md"), `${commitMessage}\n`);
     execSync("git add README.md", { cwd: repoPath });
@@ -6928,6 +6930,7 @@ print(json.dumps({
     setupTaskRepo();
     execSync("git init -q -b feature/some-work", { cwd: tmpDir });
     execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config core.excludesFile /dev/null", { cwd: tmpDir });
     execSync("git config user.name Test", { cwd: tmpDir });
     execSync("git add -A", { cwd: tmpDir });
     execSync("git commit -q -m init", { cwd: tmpDir });
@@ -6974,6 +6977,7 @@ print(json.dumps({
     setupTaskRepo();
     execSync("git init -q -b solo-branch", { cwd: tmpDir });
     execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config core.excludesFile /dev/null", { cwd: tmpDir });
     execSync("git config user.name Test", { cwd: tmpDir });
     execSync("git add -A", { cwd: tmpDir });
     execSync("git commit -q -m init", { cwd: tmpDir });
@@ -7020,6 +7024,7 @@ print(json.dumps({
     setupTaskRepo();
     execSync("git init -q -b solo-branch", { cwd: tmpDir });
     execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config core.excludesFile /dev/null", { cwd: tmpDir });
     execSync("git config user.name Test", { cwd: tmpDir });
     execSync("git add -A", { cwd: tmpDir });
     execSync("git commit -q -m init", { cwd: tmpDir });
@@ -7066,6 +7071,7 @@ print(json.dumps({
     setupTaskRepo();
     execSync("git init -q -b main", { cwd: tmpDir });
     execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config core.excludesFile /dev/null", { cwd: tmpDir });
     execSync("git config user.name Test", { cwd: tmpDir });
     execSync("git add -A", { cwd: tmpDir });
     execSync("git commit -q -m init", { cwd: tmpDir });
@@ -7097,6 +7103,7 @@ print(json.dumps({
     setupTaskRepo();
     execSync("git init -q -b main", { cwd: tmpDir });
     execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config core.excludesFile /dev/null", { cwd: tmpDir });
     execSync("git config user.name Test", { cwd: tmpDir });
     execSync("git add -A", { cwd: tmpDir });
     execSync("git commit -q -m init", { cwd: tmpDir });
@@ -7129,6 +7136,7 @@ print(json.dumps({
   function initTaskGitRepo(branch: string, withRemote = false): void {
     execSync(`git init -q -b ${branch}`, { cwd: tmpDir });
     execSync("git config user.email test@example.com", { cwd: tmpDir });
+    execSync("git config core.excludesFile /dev/null", { cwd: tmpDir });
     execSync("git config user.name Test", { cwd: tmpDir });
     execSync("git add -A", { cwd: tmpDir });
     execSync("git commit -q -m init", { cwd: tmpDir });
@@ -8943,6 +8951,7 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
     execSync("git init -q -b main", { cwd: tmpDir });
     // Configure user so git commit succeeds in CI sandboxes.
     execSync('git config user.email "test@trellis.local"', { cwd: tmpDir });
+    execSync('git config core.excludesFile /dev/null', { cwd: tmpDir });
     execSync('git config user.name "Trellis Test"', { cwd: tmpDir });
   });
 
@@ -9303,6 +9312,7 @@ describe("regression: safe auto-commit when .trellis/ is gitignored (0.5.10 → 
       tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-safe-commit-"));
       execSync("git init -q -b main", { cwd: tmpDir });
       execSync('git config user.email "test@trellis.local"', { cwd: tmpDir });
+      execSync('git config core.excludesFile /dev/null', { cwd: tmpDir });
       execSync('git config user.name "Trellis Test"', { cwd: tmpDir });
     }
   });
@@ -9347,6 +9357,7 @@ describe("regression: bounded index.lock retry on archive auto-commit", () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-index-lock-"));
     execSync("git init -q -b main", { cwd: tmpDir });
     execSync('git config user.email "test@trellis.local"', { cwd: tmpDir });
+    execSync('git config core.excludesFile /dev/null', { cwd: tmpDir });
     execSync('git config user.name "Trellis Test"', { cwd: tmpDir });
   });
 
@@ -9552,11 +9563,10 @@ print(json.dumps({
     expect(stderr).toContain("another process is holding");
     expect(stderr).toContain("gave up after 3 attempts");
     // Says what is left to do, so neither a user nor an agent reading the
-    // log has to guess.
+    // log has to guess: recovery state + retry path, never a re-archive.
     expect(stderr).toContain("only the commit is pending");
-    expect(stderr).toContain(
-      `git commit -m "chore(task): archive ${taskName}"`,
-    );
+    expect(stderr).toContain("Recovery state saved");
+    expect(stderr).toContain("--require-commit");
     expect(stderr).toContain("Archive moved on disk");
 
     // Consistent state: the move completed, nothing is half-moved.
@@ -10038,6 +10048,9 @@ describe("regression: a linked worktree inherits developer identity", () => {
     git(mainDir, "init", "-q", "-b", "main", ".");
     git(mainDir, "config", "user.email", "test@example.com");
     git(mainDir, "config", "user.name", "test");
+    // Hermetic: a host's global excludes file ignoring `.trellis` would
+    // silently unstage the fixture's .trellis content.
+    git(mainDir, "config", "core.excludesFile", "/dev/null");
     git(mainDir, "add", "-A");
     git(mainDir, "commit", "-qm", "init");
     git(mainDir, "worktree", "add", "-q", worktreeDir, "-b", "wt");

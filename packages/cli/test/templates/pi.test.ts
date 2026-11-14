@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
+import * as externalStore from "../../src/templates/shared-hooks/external-store.js";
 import ts from "typescript";
 import { collectPiTemplates } from "../../src/configurators/pi.js";
 import { getExtensionTemplate } from "../../src/templates/pi/index.js";
@@ -87,7 +88,7 @@ function handlers(): Map<string, Handler> {
   vm.runInNewContext(compiled.outputText, {
     Buffer,
     process: sandboxProcess,
-    require: createRequire(import.meta.url),
+    require: (specifier: string) => specifier === "./external-store.js" ? externalStore : createRequire(import.meta.url)(specifier),
     module: moduleObject,
     exports: moduleObject.exports,
   });

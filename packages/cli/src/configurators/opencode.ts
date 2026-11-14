@@ -3,6 +3,7 @@ import path from "node:path";
 import { AI_TOOLS } from "../types/ai-tools.js";
 import { getOpenCodeTemplatePath } from "../templates/extract.js";
 import { toPosix } from "../utils/posix.js";
+import { getExternalStoreBootstrap } from "../templates/shared-hooks/index.js";
 import {
   collectSkillTemplates,
   replacePythonCommandLiterals,
@@ -80,6 +81,7 @@ function walkOpenCodeTemplateDir(): Map<string, string> {
  */
 export function collectOpenCodeTemplates(): Map<string, string> {
   const files = walkOpenCodeTemplateDir();
+  files.set(".opencode/lib/external-store.js", getExternalStoreBootstrap("js"));
   const ctx = AI_TOOLS.opencode.templateContext;
   for (const cmd of resolveCommands(ctx)) {
     files.set(`.opencode/commands/trellis/${cmd.name}.md`, cmd.content);

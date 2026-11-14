@@ -39,6 +39,7 @@ import { FILE_NAMES } from "../constants/paths.js";
 import { getAllMigrations } from "../migrations/index.js";
 import { saveHashes } from "./template-hash.js";
 import { toPosix } from "./posix.js";
+import { CONF_FILENAME, isExternalMode } from "./external-store.js";
 import { TRELLIS_BLOCK_END, TRELLIS_BLOCK_START } from "./managed-paths.js";
 import type { AITool } from "../types/ai-tools.js";
 import type { TemplateHashes } from "../types/migration.js";
@@ -137,6 +138,10 @@ export function pruneOrphanManifestKeys(
     // which uninstall removes wholesale and which update needs for
     // modified-file detection.
     if (key.startsWith(".trellis/") || key === ".trellis") {
+      kept[key] = value;
+      continue;
+    }
+    if (key === CONF_FILENAME && isExternalMode(cwd)) {
       kept[key] = value;
       continue;
     }

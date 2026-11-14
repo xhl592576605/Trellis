@@ -950,6 +950,7 @@ only applies to per-worker supervisor cleanup.
 | `prune` with >1 of `--all/--empty/--idle/--ephemeral` | throw `"prune flags are mutually exclusive: <flags>. Pick one."` |
 | `prune` without `--yes` | print candidates + `(dry-run)` notice; exit 0 without deleting |
 | `run` worker exits with `error` or `killed` before `done` | exit 1, stderr `"channel kept for inspection: <path>"` |
+
 | `selectExistingChannelProject(name)` channel exists in ≥2 project buckets | throw `"Channel '<name>' exists in multiple project buckets: <csv>. Run from the owning project cwd or use --scope."` |
 | `selectExistingChannelProject(name)` not found anywhere | throw `"Channel '<name>' not found in current project bucket (<key>) or any known project bucket"` |
 
@@ -1288,3 +1289,70 @@ commands/channel/
 - **events.jsonl rotation** — triggers when single file > 100MB OR > 100k events. Schema split + reader-merge is the open design question.
 - **Event attribution + pass-through metadata** — keep `by` as a lightweight alias, add `origin: "cli"|"api"|"worker"` for the write entrypoint, and store business identity/context in `meta` without teaching Trellis user/org semantics.
 - **GUI frontend** consuming `events.jsonl` via fs.watch (Electron) or polling. CLI render rules in `messages.ts` translate directly.
+
+## External locator integration
+
+### 1. Scope / Trigger
+
+Channel context/config/agent reads with `.treills.conf.json`, including absent
+or incorrect browse links. Channel project buckets and worker cwd retain code
+checkout semantics. `mem` likewise retains its original code-cwd filter.
+
+### 2. Signatures
+
+Existing `resolveTrustedRoots(cwd)`, `resolveWorkerGuardConfig({cwd, env})`,
+`loadAgent(name, cwd, trustedRoots)` and
+`assembleContext(cwd, files, jsonls, trustedRoots)` stay unchanged.
+
+### 3. Contracts
+
+- Read config and agent definitions through `resolveWorkflowDir(cwd)`. Explicit
+  invalid locators throw before returning defaults or launching a worker.
+- Trust the validated external project directory, never the whole store. Read
+  the explicit trusted-dir list from that same external config. Relative
+  allowlist entries keep their code-cwd meaning.
+- Top-level symlink auto-trust is a legacy rule only. Applying it to an external
+  binding would let an unrelated browse target expand the trusted roots.
+- Map logical `.trellis/*` files/manifests/manifest entries before realpath
+  containment. Code references remain relative to code cwd. Absolute paths
+  and absolute globs preserve their filesystem/drive root.
+- Keep realpath checks after mapping; nested links and prefix-matching siblings
+  do not become trusted. This does not grant any provider sandbox permission.
+- Do not repoint channel storage, project buckets or raw AI conversation logs
+  to the external product store. Tests must isolate their channel/session roots.
+
+### 4. Validation & Error Matrix
+
+| Input | Outcome |
+| --- | --- |
+| Valid config, absent browse link | Agent/config/JSONL/file/glob reads succeed |
+| Wrong browse link with outside tasks symlink | Ignored; no extra trusted root |
+| Invalid explicit locator | Diagnostic exception, no fallback defaults |
+| Other project absolute file or nested link | Existing jail refuses injection |
+| Explicit configured trusted directory | Honor it using the same external config |
+| mem/channel invoked from code checkout | Original code cwd/filter/bucket retained |
+
+### 5. Good / Base / Bad Cases
+
+- Good: load an old logical task JSONL without a browse link.
+- Base: valid shared config supplies idle TTL and worker budget.
+- Bad: use browse-link existence as a config fallback or auto-trust its targets.
+
+### 6. Tests Required
+
+`channel-context-trust.test.ts` covers no-link agent/manifest/glob reads,
+code-context retention, sibling and nested-link refusal, external trust/guard
+config, wrong browse links and invalid locators.
+`external-workflow.integration.test.ts` checks mem filter and channel project
+key in the feature checkout. Built-CLI smoke additionally creates isolated raw
+Pi sessions for code/data cwds and verifies only the code session is listed;
+a local channel create event records code cwd. No AI worker is spawned.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: silently depends on the optional browse link.
+const config = path.join(cwd, ".trellis", "config.yaml");
+// Correct: binding validation precedes reading policy.
+const config = path.join(resolveWorkflowDir(cwd), "config.yaml");
+```

@@ -5,6 +5,7 @@ import inquirer from "inquirer";
 
 import { writeFileAtomic } from "./atomic-write.js";
 import { toPosix } from "./posix.js";
+import { resolveWorkflowDir } from "./external-store.js";
 
 export type WriteMode = "ask" | "force" | "skip" | "append";
 
@@ -42,6 +43,7 @@ export function getWriteMode(): WriteMode {
 let writeRecorder: Set<string> | null = null;
 /** Project root used to convert absolute write paths to POSIX-relative keys. */
 let writeRecorderRoot: string | null = null;
+let writeRecorderWorkflowRoot: string | null = null;
 
 /**
  * Begin recording every write into the returned Set. Calls accumulate into the
@@ -57,6 +59,7 @@ export function startRecordingWrites(cwd: string): Set<string> {
   const sink = new Set<string>();
   writeRecorder = sink;
   writeRecorderRoot = cwd;
+  writeRecorderWorkflowRoot = resolveWorkflowDir(cwd);
   return sink;
 }
 
@@ -64,11 +67,23 @@ export function startRecordingWrites(cwd: string): Set<string> {
 export function stopRecordingWrites(): void {
   writeRecorder = null;
   writeRecorderRoot = null;
+  writeRecorderWorkflowRoot = null;
 }
 
 /** Record a successful write. Called internally by `writeFile`. */
 function recordWrite(absPath: string): void {
   if (!writeRecorder || !writeRecorderRoot) return;
+  if (writeRecorderWorkflowRoot) {
+    const workflowRel = path.relative(writeRecorderWorkflowRoot, absPath);
+    if (
+      workflowRel &&
+      !workflowRel.startsWith("..") &&
+      !path.isAbsolute(workflowRel)
+    ) {
+      writeRecorder.add(toPosix(path.join(".trellis", workflowRel)));
+      return;
+    }
+  }
   const rel = path.relative(writeRecorderRoot, absPath);
   // Defensive: skip writes outside cwd (no meaningful manifest key).
   if (rel.startsWith("..") || path.isAbsolute(rel)) return;

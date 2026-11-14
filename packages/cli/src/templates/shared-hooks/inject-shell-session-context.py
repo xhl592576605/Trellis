@@ -35,6 +35,15 @@ if callable(_stdin_reconfigure):
 DIR_WORKFLOW = ".trellis"
 DIR_RUNTIME = ".runtime"
 DIR_SHELL_TICKETS = "shell-tickets"
+# Root-config filename (the double-l is the user's explicit spelling).
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from common.external_store import load_store
+
+# {{EXTERNAL_STORE_BOOTSTRAP}}
+
+CONF_FILENAME = ".treills.conf.json"
 SESSION_SUBCOMMANDS = {"start", "current", "finish"}
 TICKET_TTL_SECONDS = 30
 CONTEXT_IDENTITY_KEYS = (
@@ -97,17 +106,23 @@ def _resolve_trellis_root(hook_input: dict[str, Any]) -> Path | None:
 
 
 def _find_trellis_root(start: Path) -> Path | None:
-    current = start.resolve()
-    while True:
-        if (current / DIR_WORKFLOW).is_dir():
-            return current
-        if current == current.parent:
-            return None
-        current = current.parent
+    candidates = [start.resolve(), *start.resolve().parents]
+    for root in candidates:
+        if (root / CONF_FILENAME).is_file():
+            return root
+    return next((root for root in candidates if (root / DIR_WORKFLOW).is_dir()), None)
+
+
+
+def _workflow_dir_for_root(root: Path) -> Path:
+    return load_store(root).project_dir if (root / CONF_FILENAME).is_file() else root / DIR_WORKFLOW
+
 
 
 def _runtime_ticket_dir(root: Path) -> Path:
-    return root / DIR_WORKFLOW / DIR_RUNTIME / DIR_SHELL_TICKETS
+    if (root / CONF_FILENAME).is_file():
+        return load_store(root).runtime_dir / DIR_SHELL_TICKETS
+    return _workflow_dir_for_root(root) / DIR_RUNTIME / DIR_SHELL_TICKETS
 
 
 def _pending_shell_command(hook_input: dict[str, Any]) -> tuple[str, dict[str, Any] | None]:
@@ -155,7 +170,7 @@ def _host_platform_name() -> str | None:
 
 
 def _load_active_task_resolver(root: Path):
-    scripts_dir = root / DIR_WORKFLOW / "scripts"
+    scripts_dir = _workflow_dir_for_root(root) / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     from common.active_task import resolve_context_key  # type: ignore[import-not-found]

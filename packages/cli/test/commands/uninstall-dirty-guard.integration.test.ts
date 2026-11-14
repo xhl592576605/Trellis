@@ -24,7 +24,7 @@ vi.mock("inquirer", () => ({
   default: { prompt: vi.fn() },
 }));
 
-import { init } from "../../src/commands/init.js";
+import { initLegacy as init } from "../helpers/legacy-init.js";
 import {
   uninstall,
   collectUncommittedTrellisData,
@@ -57,6 +57,9 @@ describe.skipIf(!canRun)("uninstall uncommitted-data guard", () => {
     git(tmpDir, "init", "-q", "-b", "main");
     git(tmpDir, "config", "user.email", "t@example.com");
     git(tmpDir, "config", "user.name", "Test");
+    // Hermetic: a host's global excludes file ignoring `.trellis` would make
+    // the uncommitted-user-data guard see a clean tree.
+    git(tmpDir, "config", "core.excludesFile", "/dev/null");
     vi.spyOn(process, "cwd").mockReturnValue(tmpDir);
     vi.spyOn(console, "log").mockImplementation(noop);
     vi.spyOn(console, "warn").mockImplementation(noop);

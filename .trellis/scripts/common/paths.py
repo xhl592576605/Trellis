@@ -17,6 +17,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from .external_store import find_workflow_root
 from .git import main_worktree_root
 
 
@@ -55,7 +56,14 @@ DEVELOPER_HINT = (
 # =============================================================================
 
 def get_repo_root(start_path: Path | None = None) -> Path:
-    """Find the nearest directory containing .trellis/ folder.
+    """Find the code root directory for the current location.
+
+    External mode: walk up for the root config (``.treills.conf.json`` (the
+    user's spelling)); when found, the config is fully validated — an invalid
+    config raises ExternalStoreError instead of silently falling back to the
+    legacy layout, which would run against the wrong data location.
+
+    Legacy mode: walk up for a ``.trellis`` directory.
 
     This handles nested git repos correctly (e.g., test project inside another repo).
 
@@ -63,17 +71,48 @@ def get_repo_root(start_path: Path | None = None) -> Path:
         start_path: Starting directory to search from. Defaults to current directory.
 
     Returns:
-        Path to repository root, or current directory if no .trellis/ found.
+        Path to repository root, or current directory if nothing found.
     """
-    current = (start_path or Path.cwd()).resolve()
+    found = find_workflow_root(start_path)
+    if found is not None:
+        return found
 
-    while current != current.parent:
-        if (current / DIR_WORKFLOW).is_dir():
-            return current
-        current = current.parent
-
-    # Fallback to current directory if no .trellis/ found
+    # Fallback to current directory if nothing found
     return Path.cwd().resolve()
+
+
+def workflow_dir(repo_root: Path | None = None) -> Path:
+    """Workflow data directory: external project dir or legacy ``.trellis``.
+
+    The returned path is the *real* data location; it is never resolved
+    through the in-project browse link. See external_store.workflow_dir.
+    """
+    if repo_root is None:
+        repo_root = get_repo_root()
+    from .external_store import workflow_dir as _workflow_dir
+
+    return _workflow_dir(repo_root)
+
+
+def resolve_project_path(path_ref: str, repo_root: Path) -> Path | None:
+    """Map lexical workflow refs and contain realpaths within the two trusted roots."""
+    normalized = path_ref.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    root = repo_root.resolve()
+    wf = workflow_dir(root).resolve()
+    if normalized == DIR_WORKFLOW or normalized.startswith(f"{DIR_WORKFLOW}/"):
+        candidate = wf / normalized[len(DIR_WORKFLOW):].lstrip("/")
+    else:
+        candidate = root / normalized
+    try:
+        real = candidate.resolve()
+        for allowed in (root, wf):
+            if real == allowed or allowed in real.parents:
+                return real
+    except (OSError, RuntimeError):
+        return None
+    return None
 
 
 # =============================================================================
@@ -95,6 +134,30 @@ def _read_developer_file(dev_file: Path) -> str | None:
             return line.split("=", 1)[1].strip() or None
 
     return None
+
+
+def _is_external_mode(repo_root: Path) -> bool:
+    """True when this code root runs against an external store (root config)."""
+    from .external_store import resolve_store_for_root
+
+    return resolve_store_for_root(repo_root) is not None
+
+
+def workspace_display_dir(repo_root: Path | None = None) -> str | None:
+    """Lexical display path of the workspace dir (`.trellis/workspace/...`).
+
+    External mode is flat (single user): `.trellis/workspace`. Legacy mode
+    keeps the developer segment. Returns None in legacy mode without a
+    developer, matching get_workspace_dir.
+    """
+    if repo_root is None:
+        repo_root = get_repo_root()
+    if _is_external_mode(repo_root):
+        return f"{DIR_WORKFLOW}/{DIR_WORKSPACE}"
+    developer = get_developer(repo_root)
+    if not developer:
+        return None
+    return f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}"
 
 
 def get_developer(repo_root: Path | None = None) -> str | None:
@@ -128,15 +191,28 @@ def get_developer(repo_root: Path | None = None) -> str | None:
     if repo_root is None:
         repo_root = get_repo_root()
 
-    local = _read_developer_file(repo_root / DIR_WORKFLOW / FILE_DEVELOPER)
+    local = _read_developer_file(workflow_dir(repo_root) / FILE_DEVELOPER)
     if local:
         return local
 
     main_root = main_worktree_root(repo_root)
-    if main_root is None:
-        return None
+    if main_root is not None:
+        inherited = _read_developer_file(workflow_dir(main_root) / FILE_DEVELOPER)
+        if inherited:
+            return inherited
 
-    return _read_developer_file(main_root / DIR_WORKFLOW / FILE_DEVELOPER)
+    # Single-user external mode: no registration step exists. The display
+    # identity falls back to the system user so task create, journaling, and
+    # context never require init_developer (D6 / R4).
+    if _is_external_mode(repo_root):
+        import getpass
+
+        try:
+            return getpass.getuser() or None
+        except (OSError, KeyError):
+            return None
+
+    return None
 
 
 def check_developer(repo_root: Path | None = None) -> bool:
@@ -166,7 +242,7 @@ def get_tasks_dir(repo_root: Path | None = None) -> Path:
     """
     if repo_root is None:
         repo_root = get_repo_root()
-    return repo_root / DIR_WORKFLOW / DIR_TASKS
+    return workflow_dir(repo_root) / DIR_TASKS
 
 
 # =============================================================================
@@ -185,9 +261,15 @@ def get_workspace_dir(repo_root: Path | None = None) -> Path | None:
     if repo_root is None:
         repo_root = get_repo_root()
 
+    wf = workflow_dir(repo_root)
+    if _is_external_mode(repo_root):
+        # Single-user flat workspace (D6): journal files live directly under
+        # workspace/, with no developer subdirectory.
+        return wf / DIR_WORKSPACE
+
     developer = get_developer(repo_root)
     if developer:
-        return repo_root / DIR_WORKFLOW / DIR_WORKSPACE / developer
+        return wf / DIR_WORKSPACE / developer
     return None
 
 
@@ -309,20 +391,34 @@ def resolve_task_ref(task_ref: str, repo_root: Path | None = None) -> Path | Non
     except OSError:
         return None
 
+    # Candidates are built from the workflow dir's real location, not
+    # repo_root/.trellis: in external mode the in-project lexical path may not
+    # exist at all (no browse link), and a name-only ref must resolve into the
+    # external tasks dir. Lexical `.trellis/...` refs map onto the workflow
+    # dir for the same reason.
+    wf_dir = workflow_dir(root)
     path_obj = Path(normalized)
     if path_obj.is_absolute():
         candidate = path_obj
     elif normalized.startswith(f"{DIR_WORKFLOW}/"):
-        candidate = root / path_obj
+        # lstrip: doubled separators (`.trellis\\tasks`) leave a leading
+        # `/` after the strip; pathlib would treat the rest as absolute.
+        candidate = wf_dir / path_obj.relative_to(DIR_WORKFLOW).as_posix().lstrip("/")
     else:
-        candidate = root / DIR_WORKFLOW / DIR_TASKS / path_obj
+        candidate = wf_dir / DIR_TASKS / path_obj
 
     # resolve() collapses `..` and follows symlinks, so a task directory that
     # links outside the repo is refused too. Both sides are resolved because
     # repo_root itself may sit behind a symlink (/tmp on macOS does).
+    #
+    # The containment bases are the code root and the workflow dir's real
+    # location: in external mode that is the external project dir; in legacy
+    # symlink mode (#567) it is the linked store. A ref escaping BOTH bases
+    # (traversal, absolute path elsewhere, a task dir symlinked out of the
+    # tree) is refused.
     try:
         resolved = candidate.resolve()
-        workflow_real = (root / DIR_WORKFLOW).resolve()
+        workflow_real = workflow_dir(root).resolve()
     except OSError:
         return None
 
@@ -332,19 +428,21 @@ def resolve_task_ref(task_ref: str, repo_root: Path | None = None) -> Path | Non
     except ValueError:
         pass
 
-    # `.trellis` may itself be a symlink into a store outside the repo (#567).
-    # The workflow dir's own real location is then a second legitimate
-    # containment base: a ref through that link never left the workflow tree.
-    # A ref that escapes BOTH bases (traversal, absolute path elsewhere, a
-    # task dir symlinked out of the tree) is still refused.
     try:
-        rel = resolved.relative_to(workflow_real)
+        resolved.relative_to(workflow_real)
     except ValueError:
         return None
 
-    # Map back to the in-repo (lexical) form so callers store the same
-    # repo-relative ref as in the non-symlinked layout.
-    return root / DIR_WORKFLOW / rel
+    # In legacy layouts the workflow dir is (or links to) a path inside the
+    # repo, so callers get an in-repo absolute path. In external mode with no
+    # browse link, the repo-relative lexical path does not exist on disk; the
+    # resolved real path under the external project dir is the only usable
+    # one. Ref canonicalization back to the `.trellis/...` display form is
+    # done by the callers that store refs (_canonical_task_ref).
+    if workflow_real == (root / DIR_WORKFLOW).resolve():
+        rel = resolved.relative_to(workflow_real)
+        return root / DIR_WORKFLOW / rel
+    return resolved
 
 
 def get_current_task(
@@ -502,7 +600,7 @@ def get_spec_dir(package: str | None = None, repo_root: Path | None = None) -> P
     from .config import get_spec_base
 
     base = get_spec_base(package, repo_root)
-    return repo_root / DIR_WORKFLOW / base
+    return workflow_dir(repo_root) / base
 
 
 def get_package_path(package: str, repo_root: Path | None = None) -> Path | None:

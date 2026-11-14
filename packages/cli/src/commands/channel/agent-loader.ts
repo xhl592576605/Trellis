@@ -21,6 +21,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { resolveWorkflowDir } from "../../utils/external-store.js";
+
 export interface AgentDefinition {
   name: string;
   description?: string;
@@ -49,7 +51,7 @@ export function findAgentFile(
       `Agent name '${name}' is not allowed (must match ${SAFE_AGENT_NAME.source})`,
     );
   }
-  const agentsRoot = path.resolve(cwd, ".trellis", "agents");
+  const agentsRoot = path.join(resolveWorkflowDir(cwd), "agents");
   const candidates = [
     path.join(agentsRoot, `${name}.md`),
     path.join(agentsRoot, name, "AGENT.md"),
@@ -81,8 +83,8 @@ export function loadAgent(
   if (!file) {
     throw new Error(
       `Agent '${name}' not found. Looked in:\n  ${[
-        path.join(cwd, ".trellis", "agents", `${name}.md`),
-        path.join(cwd, ".trellis", "agents", name, "AGENT.md"),
+        path.join(resolveWorkflowDir(cwd), "agents", `${name}.md`),
+        path.join(resolveWorkflowDir(cwd), "agents", name, "AGENT.md"),
       ].join("\n  ")}`,
     );
   }

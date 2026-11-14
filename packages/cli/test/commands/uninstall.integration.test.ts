@@ -26,7 +26,7 @@ vi.mock("node:child_process", () => ({
   }),
 }));
 
-import { init } from "../../src/commands/init.js";
+import { initLegacy as init } from "../helpers/legacy-init.js";
 import { uninstall } from "../../src/commands/uninstall.js";
 import { DIR_NAMES } from "../../src/constants/paths.js";
 import { loadHashes } from "../../src/utils/template-hash.js";

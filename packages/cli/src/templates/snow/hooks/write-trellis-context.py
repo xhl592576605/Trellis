@@ -57,12 +57,27 @@ DEFAULT_MAX_BYTES = 7500
 COMPACT_MAX_BYTES = 2800
 
 
+# Root-config filename (the double-l is the user's explicit spelling).
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from common.external_store import load_store, render_workflow_paths
+
+# {{EXTERNAL_STORE_BOOTSTRAP}}
+
+CONF_FILENAME = ".treills.conf.json"
+
+
 def _find_repo_root(start: Path) -> Path:
-    cur = start.resolve()
-    for candidate in [cur, *cur.parents]:
-        if (candidate / ".trellis").is_dir():
-            return candidate
-    return cur
+    candidates = [start.resolve(), *start.resolve().parents]
+    for root in candidates:
+        if (root / CONF_FILENAME).is_file():
+            return root
+    return next((root for root in candidates if (root / ".trellis").is_dir()), start.resolve())
+
+
+def _workflow_dir(repo: Path) -> Path:
+    return load_store(repo).project_dir if (repo / CONF_FILENAME).is_file() else repo / ".trellis"
 
 
 def _run(cmd: list[str], cwd: Path) -> str:
@@ -99,7 +114,7 @@ def _read_text(path: Path, limit: int = 4000) -> str:
     return data
 
 
-def _parse_active_task_path(current_out: str, repo: Path) -> Path | None:
+def _parse_active_task_path(current_out: str, repo: Path, workflow: Path | None = None) -> Path | None:
     # Prefer "Current task: .trellis/tasks/..." line from task.py --source.
     for line in current_out.splitlines():
         m = re.search(r"Current task:\s*(.+)\s*$", line.strip(), re.I)
@@ -110,12 +125,20 @@ def _parse_active_task_path(current_out: str, repo: Path) -> Path | None:
             return None
         p = Path(raw)
         if not p.is_absolute():
-            p = repo / p
+            # Relative refs use the `.trellis/...` display form; map them onto
+            # the workflow dir's real location (external store or legacy).
+            base = workflow or (repo / ".trellis")
+            posix = p.as_posix()
+            if posix.startswith(".trellis/"):
+                p = base / posix[len(".trellis/"):].lstrip("/")
+            else:
+                p = repo / p
         return p
     # Fallback: first path-like token containing tasks/
     m = re.search(r"(\.trellis[/\\]tasks[/\\][^\s]+)", current_out)
     if m:
-        return repo / m.group(1).replace("\\", "/")
+        base = workflow or (repo / ".trellis")
+        return base / m.group(1).replace("\\", "/").removeprefix(".trellis/").lstrip("/")
     return None
 
 
@@ -251,7 +274,7 @@ def _resolve_runtime_session_file(
     stdin_ctx: dict[str, Any] | None = None,
 ) -> Path | None:
     # Resolve only the current session runtime file; never pick by mtime.
-    sessions_dir = repo / ".trellis" / ".runtime" / "sessions"
+    sessions_dir = _workflow_dir(repo) / ".runtime" / "sessions"
     if not sessions_dir.is_dir():
         return None
     for sid in _current_session_ids(stdin_ctx):
@@ -267,14 +290,15 @@ def _workflow_phase_summary(
     stdin_ctx: dict[str, Any] | None = None,
 ) -> list[str]:
     lines: list[str] = []
-    workflow = repo / ".trellis" / "workflow.md"
+    wf = _workflow_dir(repo)
+    workflow = wf / "workflow.md"
     if workflow.is_file():
         body = _read_text(workflow, 900)
         if body:
             lines.extend(["## workflow.md excerpt", body, ""])
 
     # Prefer classic path; fall back only to the *current* runtime session file.
-    session_md = repo / ".trellis" / "session" / "current.md"
+    session_md = wf / "session" / "current.md"
     if session_md.is_file():
         body = _read_text(session_md, 1200)
         if body:
@@ -314,14 +338,15 @@ def build_context(
         lines.append(f"Snow sessionId: {stdin_ctx.get('sessionId')}")
     if stdin_ctx.get("cwd"):
         lines.append(f"Hook cwd: {stdin_ctx.get('cwd')}")
-    task_py = repo / ".trellis" / "scripts" / "task.py"
+    wf_dir = _workflow_dir(repo)
+    task_py = wf_dir / "scripts" / "task.py"
     current = ""
     task_dir: Path | None = None
     if task_py.is_file():
         py = sys.executable or "python3"
         current = _run([py, "-X", "utf8", str(task_py), "current", "--source"], repo)
         lines.extend(["## task.py current --source", "```", current, "```", ""])
-        task_dir = _parse_active_task_path(current, repo)
+        task_dir = _parse_active_task_path(current, repo, wf_dir)
     else:
         lines.append("(no .trellis/scripts/task.py — run trellis init first)")
         lines.append("")
@@ -340,14 +365,14 @@ def build_context(
     if not compact:
         lines.extend(_workflow_phase_summary(repo, stdin_ctx))
 
-        identity = repo / ".trellis" / "identity.md"
+        identity = _workflow_dir(repo) / "identity.md"
         if identity.is_file():
             body = _read_text(identity, 1200)
             if body:
                 lines.extend(["## .trellis/identity.md", body, ""])
     else:
         # Compact: short identity one-liner if file exists.
-        identity = repo / ".trellis" / "identity.md"
+        identity = _workflow_dir(repo) / "identity.md"
         if identity.is_file():
             body = _read_text(identity, 280)
             if body:
@@ -363,7 +388,8 @@ def build_context(
         "",
     ])
 
-    return "\n".join(lines).strip() + "\n"
+    content = "\n".join(lines).strip() + "\n"
+    return render_workflow_paths(content, wf_dir) if (repo / CONF_FILENAME).is_file() else content
 
 
 def _truncate(text: str, max_bytes: int) -> str:

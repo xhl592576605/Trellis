@@ -1,4 +1,5 @@
 import { AI_TOOLS } from "../types/ai-tools.js";
+import { getExternalStoreBootstrap } from "../templates/shared-hooks/index.js";
 import {
   collectSkillTemplates,
   resolveCommands,
@@ -56,5 +57,9 @@ export function collectPiTemplates(): Map<string, string> {
     resolvePlaceholders(settings.content),
   );
 
+  files.set(
+    ".pi/extensions/trellis/external-store.js",
+    getExternalStoreBootstrap("js"),
+  );
   return files;
 }

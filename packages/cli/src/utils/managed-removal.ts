@@ -333,8 +333,17 @@ export function executeManagedRemovalPlan(
   let deletedDirs = 0;
   if (plan.removeTrellisDir) {
     const trellisDir = path.join(cwd, DIR_NAMES.WORKFLOW);
-    if (lstatIfPresent(trellisDir)) {
-      fs.rmSync(trellisDir, { recursive: true, force: true });
+    const stat = lstatIfPresent(trellisDir);
+    if (stat) {
+      if (stat.isSymbolicLink()) {
+        // External-storage browse link: remove the link only, NEVER the
+        // external target it points at (junctions on Windows also surface
+        // as symlinks via lstat). Design §10: external data survives
+        // uninstall/ablate untouched.
+        fs.unlinkSync(trellisDir);
+      } else {
+        fs.rmSync(trellisDir, { recursive: true, force: true });
+      }
       deletedDirs += 1;
     }
   }

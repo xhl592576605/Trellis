@@ -33,7 +33,7 @@ vi.mock("node:child_process", () => ({
 
 // === Imports ===
 
-import { init } from "../../src/commands/init.js";
+import { initLegacy as init } from "../helpers/legacy-init.js";
 import { DIR_NAMES, FILE_NAMES, PATHS } from "../../src/constants/paths.js";
 import { execSync } from "node:child_process";
 

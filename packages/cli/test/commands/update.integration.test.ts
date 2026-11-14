@@ -50,7 +50,7 @@ vi.mock("giget", async () => {
 
 // === Imports ===
 
-import { init } from "../../src/commands/init.js";
+import { initLegacy as init } from "../helpers/legacy-init.js";
 import {
   update,
   classifyMigrations,

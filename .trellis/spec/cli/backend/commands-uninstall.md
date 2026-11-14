@@ -328,3 +328,14 @@ Do **not** mock `fs` for these tests; they all use real tmpdirs. The pattern is:
 | `collectUncommittedTrellisData` | `commands/uninstall.ts:collectUncommittedTrellisData` (exported) |
 | `TRELLIS_ALLOW_DIRTY_UNINSTALL` (env bypass) | checked via `dirtyUninstallBypassEnabled` in `commands/uninstall.ts` |
 | Scrubbers (`scrubHooksJson`, `scrubOpencodePackageJson`, `scrubPiSettings`, `scrubCodexConfigToml`, `scrubManagedMarkdownBlock`) | `utils/uninstall-scrubbers.ts` — see `uninstall-scrubbers.md` |
+
+
+## External storage exception
+
+With a valid root locator, the merged logical manifest is scoped to this
+checkout before planning: `.trellis/*` shared product entries are excluded,
+and the locator plus browse link are explicit local removals. A missing link
+does not indicate a missing install; a physical `.trellis` entry is a conflict.
+Pruning is in memory, the shared manifest is not rewritten, and the legacy
+dirty-data guard does not apply because external data is retained.
+See [Filesystem Safety: external transactions](./filesystem-safety.md#external-transactions-commits-migration-and-removal-phases-57).

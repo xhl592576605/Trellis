@@ -101,6 +101,23 @@ export function getMigrationsForVersion(
 }
 
 /**
+ * Whether the from→to range crosses a release that requires the explicit
+ * storage migration (legacy in-repo `.trellis` → external store).
+ */
+export function crossesStorageMigration(
+  fromVersion: string,
+  toVersion: string,
+): boolean {
+  const manifests = loadManifests();
+  return Object.entries(manifests).some(
+    ([version, manifest]) =>
+      manifest.requiresStorageMigration === true &&
+      compareVersions(version, fromVersion) > 0 &&
+      compareVersions(version, toVersion) <= 0,
+  );
+}
+
+/**
  * Check if there are any pending migrations between versions
  */
 export function hasPendingMigrations(

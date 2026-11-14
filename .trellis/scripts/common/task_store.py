@@ -32,14 +32,10 @@ from .config import (
     validate_package,
 )
 from .git import (
-    INDEX_LOCK_RETRY_ATTEMPTS,
     branch_exists_locally,
     has_git_remote,
-    index_lock_path,
     resolve_default_branch,
     run_git,
-    run_git_retry_index_lock,
-    stderr_indicates_index_lock,
 )
 from .io import describe_json_read_failure, read_json_checked, write_json
 from .log import Colors, colored
@@ -54,10 +50,16 @@ from .paths import (
     get_repo_root,
     get_tasks_dir,
 )
+from .data_git import (
+    data_git_context,
+    print_pending_notice,
+    remove_pending_commit,
+    upsert_pending_commit,
+)
 from .safe_commit import (
-    print_gitignore_warning,
-    safe_archive_paths_to_add,
-    safe_git_add,
+    ARCHIVE_COMMIT_DONE,
+    ARCHIVE_COMMIT_SKIPPED,
+    commit_task_archive,
 )
 from .task_utils import (
     archive_destination_for,
@@ -328,14 +330,18 @@ def cmd_create(args: argparse.Namespace) -> int:
         # Inferred: default_package → None (no task.json yet for create)
         package = resolve_package(repo_root=repo_root)
 
-    # Default assignee to current developer
+    # Default assignee to current developer. External single-user mode needs
+    # no registration: get_developer falls back to the system user there.
     assignee = args.assignee
     if not assignee:
         assignee = get_developer(repo_root)
         if not assignee:
-            print(colored("Error: No developer set. Run init_developer.py first or use --assignee", Colors.RED), file=sys.stderr)
-            print(DEVELOPER_HINT, file=sys.stderr)
-            return 1
+            from .paths import _is_external_mode
+
+            if not _is_external_mode(repo_root):
+                print(colored("Error: No developer set. Run init_developer.py first or use --assignee", Colors.RED), file=sys.stderr)
+                print(DEVELOPER_HINT, file=sys.stderr)
+                return 1
 
     ensure_tasks_dir(repo_root)
 
@@ -832,7 +838,9 @@ def _plan_reported_refs(
         r"(?<![0-9A-Za-z_-])" + re.escape(old_name) + r"(?![0-9A-Za-z_-])"
     )
     hits: list[tuple[Path, int]] = []
-    trellis_dir = repo_root / DIR_WORKFLOW
+    from .paths import workflow_dir
+
+    trellis_dir = workflow_dir(repo_root)
     sessions_dir = _runtime_sessions_dir(repo_root)
     if not trellis_dir.is_dir():
         return hits
@@ -1271,6 +1279,25 @@ def cmd_archive(args: argparse.Namespace) -> int:
                 )
                 return 1
 
+            # Related task metadata is shared with other tasks/sessions.
+            # Refuse before any archive mutation if it is already dirty: an
+            # explicit pathspec cannot separate unrelated fields in one JSON.
+            ctx = data_git_context(repo_root)
+            if ctx.is_external:
+                for child_name in data.get("children", []):
+                    child_dir = find_task_by_name(child_name, tasks_dir)
+                    if child_dir is None:
+                        continue
+                    child_spec = (ctx.prefix + child_dir.relative_to(get_tasks_dir(repo_root).parent).as_posix()
+                                  + "/task.json")
+                    rc, status, err = run_git(
+                        ["status", "--porcelain", "--", child_spec], cwd=ctx.git_root
+                    )
+                    if rc != 0 or status.strip():
+                        print(f"[BLOCKED] Related task metadata has unowned changes: {child_spec}. "
+                              f"Commit/review it before archiving. {err}", file=sys.stderr)
+                        return 1
+
             data["status"] = "completed"
             data["completedAt"] = today
             if not write_json(task_json_path, data):
@@ -1359,13 +1386,29 @@ def cmd_archive(args: argparse.Namespace) -> int:
         year_month = archive_dest.parent.name
         print(colored(f"Archived: {dir_name} -> archive/{year_month}/", Colors.GREEN), file=sys.stderr)
 
+        # Persist identity even for --no-commit: archive clears the active
+        # pointer, so the final journal step cannot rediscover it otherwise.
+        if not upsert_pending_commit(
+            repo_root, _pending_archive_entry(
+                dir_name, repo_root, modified_children,
+                f"{DIR_TASKS}/{DIR_ARCHIVE}/{year_month}/{dir_name}",
+            )
+        ):
+            print("[BLOCKED] Cannot persist pending archive recovery state.", file=sys.stderr)
+            return 1
+
         # Auto-commit unless --no-commit
         if not getattr(args, "no_commit", False):
-            if not _auto_commit_archive(dir_name, repo_root, modified_children):
+            if not _auto_commit_archive(
+                dir_name, repo_root, modified_children,
+                f"{DIR_TASKS}/{DIR_ARCHIVE}/{year_month}/{dir_name}",
+            ):
                 print(
                     colored(
-                        "Archive moved on disk, but git auto-commit did not complete. "
-                        "Resolve `git status` before continuing.",
+                        "Archive moved on disk, but its data commit did not "
+                        "complete. Recovery state was saved — finish-work's "
+                        "final step (add_session.py --require-commit) or any "
+                        "later add_session.py run retries it. Do NOT re-archive.",
                         Colors.RED,
                     ),
                     file=sys.stderr,
@@ -1383,156 +1426,87 @@ def cmd_archive(args: argparse.Namespace) -> int:
     return 1
 
 
+def _pending_archive_entry(
+    task_name: str,
+    repo_root: Path,
+    modified_children: list[str] | None,
+    destination: str = "",
+) -> dict:
+    """Recovery entry for an archive whose data commit did not complete.
+
+    Everything needed to retry is recomputed from disk state by
+    :func:`~.safe_commit.commit_task_archive`; the stored destination is for
+    humans reading the state file, not for the retry itself.
+    """
+    dest = destination
+    archive_dir = get_tasks_dir(repo_root) / DIR_ARCHIVE
+    if not dest and archive_dir.is_dir():
+        for month in sorted(archive_dir.iterdir()):
+            if (month / task_name).is_dir():
+                dest = f"{DIR_TASKS}/{DIR_ARCHIVE}/{month.name}/{task_name}"
+                break
+    return {
+        "task": task_name,
+        "dest": dest,
+        "modified_children": list(modified_children or []),
+    }
+
+
 def _auto_commit_archive(
     task_name: str,
     repo_root: Path,
     modified_children: list[str] | None = None,
+    destination: str = "",
 ) -> bool:
-    """Stage Trellis-owned task paths and commit after archive.
+    """Commit ONE task's archive move in the data repository, or persist a
+    recoverable pending state.
 
-    Scoped narrowly to the archived task's source + destination paths
-    plus any child task dirs whose ``task.json`` was edited (parent →
-    children relationship update). Dirty changes in OTHER active task
-    dirs are NOT bundled into the archive commit.
+    The move itself already happened on disk. When the commit cannot land
+    (git error, held index lock, or ``session_auto_commit: false``), the
+    task identity and archive target are persisted under the project
+    runtime dir so a later ``add_session.py`` run — in particular
+    finish-work's final ``--require-commit`` step — retries exactly this
+    commit without re-archiving (D7: never report success with uncommitted
+    task data, never lose a moved task between states).
 
-    If ``.gitignore`` blocks the paths, we warn + skip — we do NOT
-    retry with ``git add -f``. The warning explicitly forbids
-    ``git add -f .trellis/`` (which would fan out to caches/backups)
-    and points users at ``session_auto_commit: false``.
-
-    Honors ``session_auto_commit`` in ``.trellis/config.yaml``: when
-    set to ``false``, this function returns immediately without
-    touching git (the archive directory move on disk is unaffected).
+    Returns True when the task's data is committed (or provably nothing to
+    commit); False when the commit is still outstanding — the caller fails
+    the command so no caller mistakes the archive as complete.
     """
     if not get_session_auto_commit(repo_root):
         print(
             "[OK] session_auto_commit: false — skipping git stage/commit.",
             file=sys.stderr,
         )
+        if not upsert_pending_commit(
+            repo_root, _pending_archive_entry(task_name, repo_root, modified_children, destination)
+        ):
+            return False
+        print_pending_notice(repo_root)
         return True
 
-    source_rel = f"{DIR_WORKFLOW}/{DIR_TASKS}/{task_name}"
-    rc, tracked_out, _ = run_git(
-        ["ls-files", "--", source_rel],
-        cwd=repo_root,
+    outcome, err = commit_task_archive(
+        repo_root, task_name, modified_children,
+        archive_ref=f"{DIR_WORKFLOW}/{destination}" if destination else None,
     )
-    source_was_tracked = rc == 0 and bool(tracked_out.strip())
-
-    paths = safe_archive_paths_to_add(
-        repo_root, task_name=task_name, modified_children=modified_children
-    )
-    if not paths:
+    if outcome == ARCHIVE_COMMIT_DONE:
+        remove_pending_commit(repo_root, task_name)
+        return True
+    if outcome == ARCHIVE_COMMIT_SKIPPED:
+        remove_pending_commit(repo_root, task_name)
         print("[OK] No task changes to commit.", file=sys.stderr)
         return True
 
-    success, _, err = safe_git_add(paths, repo_root, retry_on_index_lock=True)
-    if not success:
-        if err and "ignored by" in err.lower():
-            print_gitignore_warning(paths)
-        elif stderr_indicates_index_lock(err):
-            _print_index_lock_warning(
-                "git add", task_name, repo_root, [*paths, source_rel]
-            )
-        else:
-            print(
-                f"[WARN] git add failed: {err.strip() if err else 'unknown error'}",
-                file=sys.stderr,
-            )
-        return not source_was_tracked
-
-    # Belt-and-suspenders for the phantom-delete bug: `safe_git_add` uses
-    # `git add` (no -A) which only stages additions/modifications. The
-    # source task directory was moved away by `shutil.move`, so its files
-    # need an explicit `git rm --cached` to stage the deletions in this
-    # same commit — otherwise they sit as uncommitted "phantom deletes"
-    # against HEAD until something later picks them up.
-    #
-    # `--ignore-unmatch` makes this a no-op when the task was never tracked
-    # (e.g. archiving a task that lived only in working tree).
-    rc, _, err = run_git_retry_index_lock(
-        ["rm", "-r", "--cached", "--ignore-unmatch", "--", source_rel],
-        cwd=repo_root,
-    )
-    if rc != 0 and stderr_indicates_index_lock(err):
-        # Committing now would record the archived copy without the
-        # source-side deletes — a half-archived tree in history.
-        _print_index_lock_warning(
-            "git rm --cached", task_name, repo_root, [*paths, source_rel]
-        )
-        return not source_was_tracked
-
-    # `source_rel` may only appear in a pathspec while git still knows that
-    # path. `git commit -- <pathspec>` rejects the whole argument list with
-    # "did not match any file(s) known to git" as soon as one entry matches
-    # nothing, and a task that was never committed before archiving has no
-    # source-side deletions staged either (see the `--ignore-unmatch` above).
-    commit_paths = [*paths, source_rel] if source_was_tracked else list(paths)
-    rc, _, _ = run_git(
-        ["diff", "--cached", "--quiet", "--", *commit_paths],
-        cwd=repo_root,
-    )
-    if rc == 0:
-        print("[OK] No task changes to commit.", file=sys.stderr)
-        return True
-
-    commit_msg = f"chore(task): archive {task_name}"
-    # Commit with an explicit pathspec: a bare `git commit` would sweep any
-    # unrelated entries the developer had staged before archiving into the
-    # chore commit (#579). `source_rel` is included so the source-side
-    # deletions staged above land in the same commit.
-    rc, _, err = run_git_retry_index_lock(
-        ["commit", "-m", commit_msg, "--", *commit_paths], cwd=repo_root
-    )
-    if rc == 0:
-        print(f"[OK] Auto-committed: {commit_msg}", file=sys.stderr)
-        return True
-    elif stderr_indicates_index_lock(err):
-        _print_index_lock_warning(
-            "git commit", task_name, repo_root, [*paths, source_rel]
-        )
-        return not source_was_tracked
-    else:
-        print(f"[WARN] Auto-commit failed: {err.strip()}", file=sys.stderr)
-        return not source_was_tracked
-
-
-def _print_index_lock_warning(
-    action: str, task_name: str, repo_root: Path, paths: list[str]
-) -> None:
-    """Report an archive auto-commit that gave up on a held index.lock.
-
-    The move itself already succeeded, so the state is consistent — the task
-    lives in archive/ and its changes are staged-or-not but never half of
-    both in a commit. Only the commit is outstanding, which the user (or an
-    agent reading the log) has to finish by hand.
-
-    ``paths`` are the paths the auto-commit would have staged, so the manual
-    command keeps the same narrow scope — a blanket ``git add -A -- .trellis/``
-    would sweep dirty changes from other active tasks into the archive commit.
-    """
-    lock = index_lock_path(repo_root)
     print(
-        f"[WARN] {action} gave up after {INDEX_LOCK_RETRY_ATTEMPTS} attempts: "
-        f"another process is holding {lock}",
+        f"[WARN] Auto-commit failed: {err.strip() if err else 'unknown error'}",
         file=sys.stderr,
     )
-    print(
-        "[WARN] The task was moved into archive/ on disk; only the commit is pending.",
-        file=sys.stderr,
-    )
-    print(
-        "[WARN] Close whatever holds the lock (an IDE git integration, a status",
-        file=sys.stderr,
-    )
-    print(
-        f"[WARN] daemon, another session), or delete {lock} if it is stale, then",
-        file=sys.stderr,
-    )
-    print(
-        f'[WARN] commit manually: git add -A -- {" ".join(paths)} && '
-        f'git commit -m "chore(task): archive {task_name}"',
-        file=sys.stderr,
-    )
+    if not upsert_pending_commit(
+        repo_root, _pending_archive_entry(task_name, repo_root, modified_children, destination)
+    ):
+        return False
+    print_pending_notice(repo_root)
+    return False
 
 
 # =============================================================================

@@ -29,12 +29,18 @@ import { loadHashes } from "../utils/template-hash.js";
 import { getConfiguredPlatforms } from "../configurators/index.js";
 import { pruneOrphanManifestKeys } from "../utils/manifest-prune.js";
 import {
+  CONF_FILENAME,
+  isExternalMode,
+  readExternalStore,
+} from "../utils/external-store.js";
+import {
   isCwdHomedir,
   homedirGuardMessage,
   homedirBypassEnabled,
 } from "../utils/cwd-guard.js";
 import {
   buildManagedRemovalPlan,
+  lstatIfPresent,
   executeManagedRemovalPlan,
   type ManagedRemovalPlan,
 } from "../utils/managed-removal.js";
@@ -49,7 +55,11 @@ type UninstallPlan = ManagedRemovalPlan;
 /**
  * Render the two-column uninstall plan to stdout.
  */
-function renderPlan(cwd: string, plan: UninstallPlan): void {
+function renderPlan(
+  cwd: string,
+  plan: UninstallPlan,
+  external: { storeDir: string } | null,
+): void {
   const trellisDir = path.join(cwd, DIR_NAMES.WORKFLOW);
 
   console.log(chalk.bold("\nTrellis uninstall plan\n"));
@@ -65,11 +75,19 @@ function renderPlan(cwd: string, plan: UninstallPlan): void {
     console.log(`  ${chalk.red("-")} ${p}`);
   }
   if (plan.removeTrellisDir && fs.existsSync(trellisDir)) {
-    console.log(
-      `  ${chalk.red("-")} ${DIR_NAMES.WORKFLOW}/  ${chalk.gray(
-        "(entire directory — including your specs, task PRDs, journals, and memory)",
-      )}`,
-    );
+    if (external) {
+      console.log(
+        `  ${chalk.red("-")} ${DIR_NAMES.WORKFLOW}/  ${chalk.gray(
+          "(browse link only — your external data is preserved)",
+        )}`,
+      );
+    } else {
+      console.log(
+        `  ${chalk.red("-")} ${DIR_NAMES.WORKFLOW}/  ${chalk.gray(
+          "(entire directory — including your specs, task PRDs, journals, and memory)",
+        )}`,
+      );
+    }
   }
 
   if (plan.modifications.length > 0) {
@@ -170,9 +188,24 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
 
   const cwd = process.cwd();
   const trellisDir = path.join(cwd, DIR_NAMES.WORKFLOW);
+  const external = isExternalMode(cwd)
+    ? {
+        storeDir:
+          readExternalStore(cwd)?.projectDir ?? "<unresolved external store>",
+      }
+    : null;
 
-  // Pre-check 1: must have a `.trellis/` directory.
-  if (!fs.existsSync(trellisDir)) {
+  const browseStat = lstatIfPresent(trellisDir);
+  if (external && browseStat && !browseStat.isSymbolicLink()) {
+    throw new Error(
+      "Refusing to remove a physical .trellis browse entry; move it aside first.",
+    );
+  }
+
+  // Pre-check 1: must have a `.trellis/` directory — except in external
+  // mode, where the browse link may already be gone (AC15: runtime is
+  // config-driven) and the locator config alone still owns integrations.
+  if (!fs.existsSync(trellisDir) && !external) {
     console.log(
       chalk.gray(
         "Trellis is not installed in this project (no .trellis/ directory found).",
@@ -209,7 +242,7 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
     cwd,
     [...configuredPlatforms],
     hashes,
-    { persist: !options.dryRun },
+    { persist: false },
   );
   if (pruned.length > 0) {
     // Surface counts only — listing every poisoned entry would alarm users
@@ -221,14 +254,48 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
     );
   }
 
-  const plan = buildManagedRemovalPlan(cwd, prunedHashes);
-  renderPlan(cwd, plan);
+  // External mode: `.trellis/*` manifest keys describe the SHARED product
+  // data in the storage repository — this checkout's uninstall must not
+  // delete or scrub any of it (design §10, D9). Only this checkout's
+  // platform integrations are planned; the locator config and the browse
+  // link are added as explicit checkout-owned deletions below.
+  let scopedHashes = prunedHashes;
+  if (external) {
+    scopedHashes = Object.fromEntries(
+      Object.entries(prunedHashes).filter(
+        ([key]) =>
+          key !== DIR_NAMES.WORKFLOW &&
+          !key.startsWith(`${DIR_NAMES.WORKFLOW}/`),
+      ),
+    );
+  }
 
-  // .trellis/ holds user-authored specs, task PRDs, and journals that have no
-  // backup here. Surface any uncommitted such files before deleting the tree,
-  // and — for scripted `--yes` runs where nobody reads the warning — fail
-  // closed unless explicitly overridden.
-  const uncommitted = collectUncommittedTrellisData(cwd);
+  const plan = buildManagedRemovalPlan(cwd, scopedHashes);
+  if (external) {
+    const confPath = path.join(cwd, CONF_FILENAME);
+    if (!plan.deletions.some((entry) => entry.posixPath === CONF_FILENAME)) {
+      plan.deletions.push({
+        posixPath: CONF_FILENAME,
+        absPath: confPath,
+        missing: !fs.existsSync(confPath),
+      });
+    }
+  }
+  renderPlan(cwd, plan, external);
+
+  if (external) {
+    console.log(
+      chalk.green(
+        `External data preserved at ${external.storeDir} — nothing in the storage repository is modified by uninstall.`,
+      ),
+    );
+    console.log("");
+  }
+
+  // The dirty-data guard protects `.trellis/` user data that uninstall is
+  // about to delete with no backup. In external mode that data is NOT
+  // deleted (see above), so the guard does not apply.
+  const uncommitted = external ? [] : collectUncommittedTrellisData(cwd);
   if (uncommitted.length > 0) {
     console.warn(
       chalk.red.bold(
@@ -297,4 +364,11 @@ export async function uninstall(options: UninstallOptions = {}): Promise<void> {
         `${summary.deletedDirs} directories removed.`,
     ),
   );
+  if (external) {
+    console.log(
+      chalk.green(
+        `Your tasks, specs, journals and scripts are preserved at ${external.storeDir}.`,
+      ),
+    );
+  }
 }

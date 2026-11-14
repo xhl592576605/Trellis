@@ -251,3 +251,16 @@ session. Global Trellis CLI data remains installed and explicitly callable.
 - interrupted `preparing` recovery and apply rollback;
 - all-path restore conflict with zero project writes;
 - complete existing uninstall scrubber/integration/dirty/over-delete suites.
+
+
+## External storage exception
+
+When a root locator is present, ablation snapshots only this checkout's
+platform surfaces, locator bytes and browse link. Shared `.trellis/*` entries
+are filtered before strict path planning. Missing browse links are supported;
+physical browse entries fail before backup/mutation. Restore validates the
+backed-up locator using `readExternalStore(projectRoot, backupConf)` before
+restoring any checkout bytes. An existing `project.json` alone does not prove
+the binding; missing, redirected or incompatible targets block restoration.
+Shared tasks/specs/journals and sibling worktree writes are never rolled back.
+See [Filesystem Safety: external transactions](./filesystem-safety.md#external-transactions-commits-migration-and-removal-phases-57).

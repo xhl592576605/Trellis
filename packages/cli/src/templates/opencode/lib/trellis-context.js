@@ -13,6 +13,34 @@ import { createHash } from "crypto"
 import { Buffer, isUtf8 } from "buffer"
 import process from "process"
 
+// ============================================================
+// External store bootstrap (root-config mode)
+// ============================================================
+
+// Root-config filename (the double-l is the user's explicit spelling).
+export const CONF_FILENAME = ".treills.conf.json"
+
+/**
+ * Resolve the code root: walk up for the root config (external mode) or the
+ * legacy `.trellis` marker. Returns null when neither is found.
+ */
+export { findCodeRoot, workflowDirOf } from "./external-store.js";
+import { workflowDirOf, runtimeDirOf } from "./external-store.js";
+
+/**
+ * Resolve a `.trellis/...` display ref onto the workflow dir's real
+ * location; other refs stay relative to the code root.
+ */
+export function resolveTrellisPath(codeRoot, relPath) {
+  const posix = String(relPath).replace(/\\/g, "/")
+  if (posix === ".trellis" || posix.startsWith(".trellis/")) {
+    const rest = posix === ".trellis" ? "" : posix.slice(".trellis/".length)
+    return join(workflowDirOf(codeRoot), rest)
+  }
+  return join(codeRoot, posix)
+}
+
+
 const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 // Debug logging
 const DEBUG_LOG = "/tmp/trellis-plugin-debug.log"
@@ -238,7 +266,7 @@ function budgetedBlock(budget, header, plainPath, content, reason, sizeForIndex)
 
 /** Read raw file bytes, return null if file doesn't exist. */
 function readFileBytes(basePath, filePath) {
-  const fullPath = isAbsolute(filePath) ? filePath : join(basePath, filePath)
+  const fullPath = isAbsolute(filePath) ? filePath : resolveTrellisPath(basePath, filePath)
   try {
     if (!statSync(fullPath).isFile()) return null
   } catch {
@@ -327,7 +355,16 @@ export class TrellisContext {
   // ============================================================
 
   isTrellisProject() {
-    return existsSync(join(this.directory, ".trellis"))
+    return (
+      existsSync(join(this.directory, CONF_FILENAME)) ||
+      existsSync(join(this.directory, ".trellis"))
+    )
+  }
+
+  // Workflow data dir for this project: external project dir when a root
+  // config is present, else the legacy `<directory>/.trellis`.
+  workflowDir() {
+    return workflowDirOf(this.directory)
   }
 
   // OpenCode exports no session identity into the environment: no OPENCODE_*
@@ -360,7 +397,7 @@ export class TrellisContext {
 
   readContext(contextKey) {
     try {
-      const contextPath = join(this.directory, ".trellis", ".runtime", "sessions", `${contextKey}.json`)
+      const contextPath = join(runtimeDirOf(this.directory), "sessions", `${contextKey}.json`)
       if (!existsSync(contextPath)) return null
       return JSON.parse(readFileSync(contextPath, "utf-8"))
     } catch {
@@ -406,7 +443,7 @@ export class TrellisContext {
    * else null.
    */
   _resolveSingleSessionFallback() {
-    const sessionsDir = join(this.directory, ".trellis", ".runtime", "sessions")
+    const sessionsDir = join(runtimeDirOf(this.directory), "sessions")
     if (!existsSync(sessionsDir)) return null
 
     let files
@@ -476,12 +513,23 @@ export class TrellisContext {
    * that whenever the project itself sits behind a symlink.
    */
   containInProject(candidate) {
+    // The workflow dir's real location is a second containment base, mirroring
+    // the Python resolver: external store or symlinked `.trellis` (#567). A
+    // candidate outside BOTH bases is refused.
+    const bases = [this.directory, this.workflowDir()]
     try {
-      const rel = relative(realpathSync(this.directory), realpathSync(candidate))
-      if (rel !== "" && (rel.startsWith("..") || isAbsolute(rel))) {
-        return null
+      const resolved = realpathSync(candidate)
+      for (const base of bases) {
+        try {
+          const rel = relative(realpathSync(base), resolved)
+          if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) {
+            return candidate
+          }
+        } catch {
+          // Unresolvable base — try the next one.
+        }
       }
-      return candidate
+      return null
     } catch {
       return null
     }
@@ -493,11 +541,14 @@ export class TrellisContext {
       return null
     }
 
+    // Lexical `.trellis/...` display refs map onto the workflow dir's real
+    // location; name-only refs resolve inside its tasks tree.
+    const wf = this.workflowDir()
     const candidate = isAbsolute(normalized)
       ? normalized
       : normalized.startsWith(".trellis/")
-        ? join(this.directory, normalized)
-        : join(this.directory, ".trellis", "tasks", normalized)
+        ? join(wf, normalized.slice(".trellis/".length))
+        : join(wf, "tasks", normalized)
 
     return this.containInProject(candidate)
   }
@@ -518,7 +569,7 @@ export class TrellisContext {
   }
 
   readProjectFile(relativePath) {
-    return this.readFile(join(this.directory, relativePath))
+    return this.readFile(resolveTrellisPath(this.directory, relativePath))
   }
 
   runScript(scriptPath, cwd = null, contextKey = null) {

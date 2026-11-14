@@ -16,6 +16,13 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { resolveManagedPath } from "../../utils/external-store.js";
+
+/** Map logical workflow references before the existing realpath jail runs. */
+function contextPath(cwd: string, ref: string): string {
+  return path.isAbsolute(ref) ? ref : resolveManagedPath(cwd, ref);
+}
+
 interface ContextBlock {
   path: string; // display path (relative to cwd if possible)
   source: "file" | "jsonl";
@@ -107,7 +114,7 @@ export function assembleContext(
 
   for (const jsonlPath of jsonls) {
     const jailedJsonl = jailedRealpath(
-      path.resolve(cwd, jsonlPath),
+      contextPath(cwd, jsonlPath),
       cwd,
       trustedRoots,
     );
@@ -138,7 +145,7 @@ export function assembleContext(
       if (obj._example !== undefined) continue;
       if (!obj.file) continue;
       const jailed = jailedRealpath(
-        path.resolve(cwd, obj.file),
+        contextPath(cwd, obj.file),
         cwd,
         trustedRoots,
       );
@@ -217,12 +224,14 @@ function* iterFileLines(filePath: string): Generator<string, void, unknown> {
  * are out of scope for MVP. Quoting passes the literal pattern from shell.
  */
 function expandGlob(cwd: string, spec: string): string[] {
-  if (!/[*?[]/.test(spec)) {
-    return [path.resolve(cwd, spec)];
+  const resolved = contextPath(cwd, spec);
+  if (!/[*?[]/.test(resolved)) {
+    return [resolved];
   }
-  // Split into static prefix + glob segments
-  const segments = spec.split(/[\\/]/).filter(Boolean);
-  let baseDir = cwd;
+  // Retain the filesystem root for absolute external paths and drive letters.
+  const root = path.parse(resolved).root;
+  const segments = resolved.slice(root.length).split(/[\\/]/).filter(Boolean);
+  let baseDir = root;
   let i = 0;
   while (i < segments.length && !/[*?[]/.test(segments[i])) {
     baseDir = path.resolve(baseDir, segments[i]);

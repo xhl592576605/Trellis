@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { DIR_NAMES, PATHS } from "../constants/paths.js";
+import { DIR_NAMES } from "../constants/paths.js";
 import { copyTrellisDir } from "../templates/extract.js";
 
 // Import trellis templates (generic, not project-specific)
@@ -70,6 +70,14 @@ export interface WorkflowOptions {
    * entry for non-native workflows so update.ts treats them as user-managed.
    */
   workflowMdOverride?: string;
+  /**
+   * Target directory for the workflow data tree. Defaults to
+   * `<cwd>/.trellis` (legacy layout). External storage mode passes the
+   * resolved external project dir here: all data files (scripts,
+   * workflow.md, config.yaml, workspace, tasks, spec, agents) are written
+   * to that directory instead, while platform wiring still targets `cwd`.
+   */
+  trellisRoot?: string;
 }
 
 /**
@@ -92,21 +100,29 @@ const JOURNAL_MERGE_UNION_PATTERN = /journal-\*\.md\s+merge=union/;
  * flow — this file is additive-only and never a candidate for whole-file
  * overwrite.
  */
-export function ensureGitattributes(cwd: string): void {
+export function ensureGitattributes(cwd: string, externalStore = false): void {
   const targetPath = path.join(cwd, ".gitattributes");
+  // External store: journals live at <project>/workspace/journal-*.md (flat,
+  // single-user); the pattern spans any project dir in the storage repo.
+  const template = externalStore
+    ? "# Trellis: append-only developer journals should merge cleanly across\n# parallel sessions/worktrees — each session only appends a new block.\n*/workspace/journal-*.md merge=union\n"
+    : gitattributesTemplate;
 
   if (!fs.existsSync(targetPath)) {
-    fs.writeFileSync(targetPath, gitattributesTemplate);
+    fs.writeFileSync(targetPath, template);
     return;
   }
 
   const existing = fs.readFileSync(targetPath, "utf-8");
-  if (JOURNAL_MERGE_UNION_PATTERN.test(existing)) {
+  if (
+    JOURNAL_MERGE_UNION_PATTERN.test(existing) ||
+    /workspace\/journal-\*\.md\s+merge=union/.test(existing)
+  ) {
     return;
   }
 
   const separator = existing.endsWith("\n") ? "\n" : "\n\n";
-  fs.writeFileSync(targetPath, existing + separator + gitattributesTemplate);
+  fs.writeFileSync(targetPath, existing + separator + template);
 }
 
 /**
@@ -132,35 +148,37 @@ export async function createWorkflowStructure(
   const remoteSpecPackages = options?.remoteSpecPackages;
   const workflowMd = options?.workflowMdOverride ?? workflowMdTemplate;
 
-  // Create base .trellis directory
-  ensureDir(path.join(cwd, DIR_NAMES.WORKFLOW));
+  // External storage mode: the data tree lives in the resolved external
+  // project dir, not `<cwd>/.trellis` (which is a browse-only link).
+  const wfRoot = options?.trellisRoot ?? path.join(cwd, DIR_NAMES.WORKFLOW);
+  const wf = (rel: string): string => path.join(wfRoot, rel);
+
+  // Create base workflow directory
+  ensureDir(wfRoot);
 
   // Copy scripts/ directory from templates
-  await copyTrellisDir("scripts", path.join(cwd, PATHS.SCRIPTS), {
+  await copyTrellisDir("scripts", wf("scripts"), {
     executable: true,
   });
 
   // Copy workflow.md (native bundled template or selected marketplace variant)
-  await writeFile(
-    path.join(cwd, PATHS.WORKFLOW_GUIDE_FILE),
-    replacePythonCommandLiterals(workflowMd),
-  );
+  await writeFile(wf("workflow.md"), replacePythonCommandLiterals(workflowMd));
 
   // Copy .gitignore from templates
-  await writeFile(
-    path.join(cwd, DIR_NAMES.WORKFLOW, ".gitignore"),
-    gitignoreTemplate,
-  );
+  await writeFile(wf(".gitignore"), gitignoreTemplate);
 
   // Copy config.yaml from templates
-  await writeFile(
-    path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml"),
-    configYamlTemplate,
-  );
+  await writeFile(wf("config.yaml"), configYamlTemplate);
 
-  // Ensure project-root .gitattributes carries the journal merge=union rule
-  // (additive-only — never overwrites a user's existing file wholesale).
-  ensureGitattributes(cwd);
+  // Ensure the journal merge=union rule exists. In legacy mode it goes to
+  // the code root; in external mode the journal Git attributes belong to the
+  // external storage repository (where journals live at <project>/workspace/),
+  // not the code checkout.
+  if (options?.trellisRoot) {
+    ensureGitattributes(path.dirname(wfRoot), true);
+  } else {
+    ensureGitattributes(cwd, false);
+  }
 
   // Dispatch channel runtime agent definitions. These are platform-agnostic
   // Trellis runtime files consumed by `trellis channel spawn --agent <name>`
@@ -168,29 +186,47 @@ export async function createWorkflowStructure(
   // dispatched on every init regardless of selected workflow because the user
   // can switch to a channel-driven workflow at any time via `trellis workflow
   // --template`.
-  ensureDir(path.join(cwd, PATHS.AGENTS));
+  ensureDir(wf("agents"));
   for (const [agentFile, content] of getAllAgents()) {
-    await writeFile(path.join(cwd, PATHS.AGENTS, agentFile), content);
+    await writeFile(wf(path.join("agents", agentFile)), content);
   }
 
-  // Create workspace/ with index.md
-  ensureDir(path.join(cwd, PATHS.WORKSPACE));
-  await writeFile(
-    path.join(cwd, PATHS.WORKSPACE, "index.md"),
-    replacePythonCommandLiterals(agentProgressIndexContent),
-  );
+  // Create workspace/ with index.md (flat in external single-user mode —
+  // no developer subdirectory is created; add_session bootstraps it lazily).
+  ensureDir(wf("workspace"));
+  // External journals/index are created by the first journal writer, inside
+  // its ownership checkpoint. Precreating untracked shared files here would
+  // make a fresh finish-work look like it contains another writer's edits.
+  if (!options?.trellisRoot) {
+    await writeFile(
+      wf(path.join("workspace", "index.md")),
+      replacePythonCommandLiterals(agentProgressIndexContent),
+    );
+  }
 
   // Create tasks/ directory
-  ensureDir(path.join(cwd, PATHS.TASKS));
+  ensureDir(wf("tasks"));
 
   // Create spec templates based on project type
   // These are NOT dogfooded - they are generic templates for new projects
   if (packages && packages.length > 0) {
     // Monorepo mode: create per-package spec directories
-    await createSpecTemplates(cwd, projectType, packages, remoteSpecPackages);
+    await createSpecTemplates(
+      cwd,
+      projectType,
+      packages,
+      remoteSpecPackages,
+      options?.trellisRoot,
+    );
   } else if (!skipSpecTemplates) {
     // Single-repo mode: create global spec (skip if using remote template)
-    await createSpecTemplates(cwd, projectType);
+    await createSpecTemplates(
+      cwd,
+      projectType,
+      undefined,
+      undefined,
+      options?.trellisRoot,
+    );
   }
 }
 
@@ -268,12 +304,14 @@ async function createSpecTemplates(
   projectType: ProjectType,
   packages?: DetectedPackage[],
   remoteSpecPackages?: Set<string>,
+  wfRoot?: string,
 ): Promise<void> {
-  // Ensure spec directory exists
-  ensureDir(path.join(cwd, PATHS.SPEC));
+  // Ensure spec directory exists (external mode: inside the workflow root)
+  const specBase = wfRoot ?? path.join(cwd, DIR_NAMES.WORKFLOW);
+  ensureDir(path.join(specBase, "spec"));
 
   // Guides - always created regardless of mode
-  const guidesDir = path.join(cwd, `${PATHS.SPEC}/guides`);
+  const guidesDir = path.join(specBase, "spec", "guides");
   ensureDir(guidesDir);
   const guidesDocs: DocDefinition[] = [
     { name: "index.md", content: guidesIndexContent },
@@ -295,13 +333,13 @@ async function createSpecTemplates(
     for (const pkg of packages) {
       const dirName = sanitizePkgName(pkg.name);
       if (remoteSpecPackages?.has(dirName)) continue;
-      const pkgSpecBase = path.join(cwd, `${PATHS.SPEC}/${dirName}`);
+      const pkgSpecBase = path.join(specBase, "spec", dirName);
       ensureDir(pkgSpecBase);
       const pkgType = pkg.type === "unknown" ? "fullstack" : pkg.type;
       await writeSpecForType(pkgSpecBase, pkgType);
     }
   } else {
     // Single-repo mode
-    await writeSpecForType(path.join(cwd, PATHS.SPEC), projectType);
+    await writeSpecForType(path.join(specBase, "spec"), projectType);
   }
 }

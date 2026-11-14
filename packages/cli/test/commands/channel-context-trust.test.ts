@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { resolveWorkerGuardConfig } from "../../src/commands/channel/guard.js";
 import { loadAgent } from "../../src/commands/channel/agent-loader.js";
 import { assembleContext } from "../../src/commands/channel/context-loader.js";
 import {
@@ -19,9 +20,9 @@ function realTmp(): string {
 
 describe("parseChannelTrustSection", () => {
   it("returns empty when channel section absent", () => {
-    expect(parseChannelTrustSection("packages:\n  cli:\n    path: x\n")).toEqual(
-      { trustedDirs: [] },
-    );
+    expect(
+      parseChannelTrustSection("packages:\n  cli:\n    path: x\n"),
+    ).toEqual({ trustedDirs: [] });
   });
 
   it("parses a trusted_context_dirs list", () => {
@@ -44,12 +45,14 @@ describe("parseChannelTrustSection", () => {
 
   it("parses auto_trust_trellis_symlinks true/false", () => {
     expect(
-      parseChannelTrustSection("channel:\n  auto_trust_trellis_symlinks: false\n")
-        .autoTrustSymlinks,
+      parseChannelTrustSection(
+        "channel:\n  auto_trust_trellis_symlinks: false\n",
+      ).autoTrustSymlinks,
     ).toBe(false);
     expect(
-      parseChannelTrustSection("channel:\n  auto_trust_trellis_symlinks: true\n")
-        .autoTrustSymlinks,
+      parseChannelTrustSection(
+        "channel:\n  auto_trust_trellis_symlinks: true\n",
+      ).autoTrustSymlinks,
     ).toBe(true);
   });
 
@@ -391,5 +394,138 @@ describe("agent-loader honors trusted roots", () => {
     );
     const agent = loadAgent("architect", cwd, []);
     expect(agent.systemPrompt).toBe("Body");
+  });
+});
+
+describe("channel context in locator mode without the browse link", () => {
+  let base: string;
+  let cwd: string;
+  let project: string;
+  let sibling: string;
+
+  beforeEach(() => {
+    base = fs.mkdtempSync(path.join(realTmp(), "trellis-channel-external-"));
+    cwd = path.join(base, "code");
+    project = path.join(base, "storage", "project");
+    sibling = path.join(base, "storage", "sibling");
+    fs.mkdirSync(cwd);
+    for (const dir of ["agents", "spec", "tasks/demo"]) {
+      fs.mkdirSync(path.join(project, dir), { recursive: true });
+    }
+    fs.mkdirSync(sibling);
+    fs.writeFileSync(
+      path.join(project, "project.json"),
+      JSON.stringify({ name: "project", codeRoot: cwd }),
+    );
+    fs.writeFileSync(
+      path.join(cwd, ".treills.conf.json"),
+      JSON.stringify({ storage: path.dirname(project), project: "project" }),
+    );
+    fs.writeFileSync(
+      path.join(project, "spec", "guide.md"),
+      "BOUND PROJECT GUIDE",
+    );
+    fs.writeFileSync(path.join(sibling, "secret.md"), "SIBLING SECRET");
+    fs.writeFileSync(
+      path.join(project, "agents", "review.md"),
+      "---\nname: review\nprovider: codex\n---\nBound agent body\n",
+    );
+  });
+
+  afterEach(() => fs.rmSync(base, { recursive: true, force: true }));
+
+  it("loads agent definitions using the binding", () => {
+    const agent = loadAgent("review", cwd, resolveTrustedRoots(cwd));
+    expect(agent.filePath).toBe(path.join(project, "agents", "review.md"));
+    expect(agent.systemPrompt).toBe("Bound agent body");
+  });
+
+  it("loads logical manifests and globs, while refusing sibling and symlink escapes", () => {
+    fs.writeFileSync(path.join(cwd, "code.txt"), "CODE CONTEXT");
+    fs.writeFileSync(
+      path.join(project, "tasks/demo/implement.jsonl"),
+      [
+        { file: ".trellis/spec/guide.md", reason: "guide" },
+        { file: "code.txt", reason: "source" },
+        { file: path.join(sibling, "secret.md"), reason: "refused" },
+      ]
+        .map((row) => JSON.stringify(row))
+        .join("\n"),
+    );
+    const roots = resolveTrustedRoots(cwd);
+    const context = assembleContext(
+      cwd,
+      [],
+      [".trellis/tasks/demo/implement.jsonl"],
+      roots,
+    );
+    expect(context.prompt).toContain("BOUND PROJECT GUIDE");
+    expect(context.prompt).toContain("CODE CONTEXT");
+    expect(context.prompt).not.toContain("SIBLING SECRET");
+    expect(
+      assembleContext(cwd, [".trellis/spec/*.md"], [], roots).prompt,
+    ).toContain("BOUND PROJECT GUIDE");
+    expect(
+      assembleContext(cwd, [path.join(project, "spec", "*.md")], [], roots)
+        .prompt,
+    ).toContain("BOUND PROJECT GUIDE");
+    if (!isWin) {
+      fs.symlinkSync(
+        path.join(sibling, "secret.md"),
+        path.join(project, "spec", "escape.md"),
+      );
+      expect(
+        assembleContext(cwd, [".trellis/spec/escape.md"], [], roots).prompt,
+      ).toBe("");
+    }
+  });
+
+  it("reads explicit trust and worker policy from external config", () => {
+    const trusted = path.join(base, "explicit-trust");
+    fs.mkdirSync(trusted);
+    fs.writeFileSync(
+      path.join(project, "config.yaml"),
+      [
+        "channel:",
+        "  trusted_context_dirs:",
+        "    - ../explicit-trust",
+        "  worker_guard:",
+        "    idle_timeout: 23s",
+        "    max_live_workers: 2",
+        "",
+      ].join("\n"),
+    );
+    expect(resolveTrustedRoots(cwd)).toEqual([project, trusted]);
+    expect(resolveWorkerGuardConfig({ cwd, env: {} })).toEqual({
+      idleTimeoutMs: 23000,
+      maxLiveWorkers: 2,
+    });
+  });
+
+  it.skipIf(isWin)(
+    "ignores a wrong browse link, including its top-level trust symlinks",
+    () => {
+      const rogue = path.join(base, "rogue");
+      fs.mkdirSync(rogue);
+      fs.symlinkSync(sibling, path.join(rogue, "tasks"), "dir");
+      fs.symlinkSync(rogue, path.join(cwd, ".trellis"), "dir");
+      fs.writeFileSync(
+        path.join(rogue, "config.yaml"),
+        "channel:\n  worker_guard:\n    max_live_workers: 99\n",
+      );
+      expect(resolveTrustedRoots(cwd)).toEqual([project]);
+      expect(resolveWorkerGuardConfig({ cwd, env: {} }).maxLiveWorkers).toBe(6);
+      expect(
+        loadAgent("review", cwd, resolveTrustedRoots(cwd)).systemPrompt,
+      ).toBe("Bound agent body");
+    },
+  );
+
+  it("reports an invalid explicit locator instead of falling back", () => {
+    fs.writeFileSync(path.join(cwd, ".treills.conf.json"), "{invalid");
+    expect(() => resolveTrustedRoots(cwd)).toThrow(/root config/);
+    expect(() => resolveWorkerGuardConfig({ cwd, env: {} })).toThrow(
+      /root config/,
+    );
   });
 });

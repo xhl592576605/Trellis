@@ -302,7 +302,32 @@ def _last_context_key_export(env_file: str) -> str | None:
     return last_export
 
 
-def _resolve_update_hint(trellis_dir: Path, context_key: str | None) -> str | None:
+# Root-config filename (the double-l is the user's explicit spelling).
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from common.external_store import load_store, render_workflow_paths
+
+# {{EXTERNAL_STORE_BOOTSTRAP}}
+
+CONF_FILENAME = ".treills.conf.json"
+
+
+def _resolve_trellis_dir(project_dir: Path) -> tuple[Path, Path]:
+    """Resolve config before legacy markers; a damaged binding never falls back."""
+    start = project_dir.resolve()
+    candidates = [start, *start.parents]
+    for root in candidates:
+        if (root / CONF_FILENAME).is_file():
+            return root, load_store(root).project_dir
+    for root in candidates:
+        if (root / ".trellis").is_dir():
+            return root, root / ".trellis"
+    return start, start / ".trellis"
+
+
+
+def _resolve_update_hint(code_root: Path, trellis_dir: Path, context_key: str | None) -> str | None:
     """Ask common.session_context whether a Trellis update is available.
 
     Throttling lives there: the first SessionStart of a session writes a marker
@@ -320,25 +345,25 @@ def _resolve_update_hint(trellis_dir: Path, context_key: str | None) -> str | No
     try:
         from common.session_context import get_update_hint  # type: ignore[import-not-found]
 
-        return get_update_hint(trellis_dir.parent, context_key)
+        return get_update_hint(code_root, context_key)
     except Exception:
         return None  # Optional reminder; keep session-start non-fatal.
 
 
-def _resolve_active_task(trellis_dir: Path, input_data: dict):
+def _resolve_active_task(code_root: Path, trellis_dir: Path, input_data: dict):
     scripts_dir = trellis_dir / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     from common.active_task import resolve_active_task  # type: ignore[import-not-found]
 
     return resolve_active_task(
-        trellis_dir.parent,
+        code_root,
         input_data,
         platform=_detect_platform(input_data),
     )
 
 
-def run_script(script_path: Path, context_key: str | None = None) -> str:
+def run_script(script_path: Path, code_root: Path, context_key: str | None = None) -> str:
     try:
         if script_path.suffix == ".py":
             # Add PYTHONIOENCODING to force UTF-8 in subprocess
@@ -360,7 +385,7 @@ def run_script(script_path: Path, context_key: str | None = None) -> str:
             encoding="utf-8",
             errors="replace",
             timeout=5,
-            cwd=script_path.parent.parent.parent,
+            cwd=code_root,
             env=env,
         )
         return result.stdout if result.returncode == 0 else "No context available"
@@ -393,13 +418,16 @@ def _resolve_task_dir(trellis_dir: Path, task_ref: str) -> Path:
     if path_obj.is_absolute():
         return path_obj
     if normalized.startswith(".trellis/"):
-        return trellis_dir.parent / path_obj
+        # Lexical `.trellis/...` display refs map onto the workflow dir's
+        # real location (external project dir or legacy .trellis). lstrip
+        # keeps doubled separators from making the rest absolute.
+        return trellis_dir / path_obj.relative_to(".trellis").as_posix().lstrip("/")
     return trellis_dir / "tasks" / path_obj
 
 
-def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
+def _get_task_status(code_root: Path, trellis_dir: Path, input_data: dict) -> str:
     """Return compact active-task status, artifact presence, and next action."""
-    active = _resolve_active_task(trellis_dir, input_data)
+    active = _resolve_active_task(code_root, trellis_dir, input_data)
 
     if not active.task_path:
         return (
@@ -481,7 +509,7 @@ def _get_task_status(trellis_dir: Path, input_data: dict) -> str:
     )
 
 
-def _load_trellis_config(trellis_dir: Path, input_data: dict) -> tuple:
+def _load_trellis_config(code_root: Path, trellis_dir: Path, input_data: dict) -> tuple:
     """Load Trellis config for session-start decisions.
 
     Returns:
@@ -495,7 +523,7 @@ def _load_trellis_config(trellis_dir: Path, input_data: dict) -> tuple:
         from common.config import get_default_package, get_packages, get_spec_scope, is_monorepo  # type: ignore[import-not-found]
         from common.paths import get_current_task  # type: ignore[import-not-found]
 
-        repo_root = trellis_dir.parent
+        repo_root = code_root
         is_mono = is_monorepo(repo_root)
         packages = get_packages(repo_root) or {}
         scope = get_spec_scope(repo_root)
@@ -662,11 +690,12 @@ def _collect_spec_index_paths(trellis_dir: Path, allowed_pkgs: set | None) -> li
 
 
 def _build_compact_current_state(
+    code_root: Path,
     trellis_dir: Path,
     input_data: dict,
     spec_index_paths: list[str],
 ) -> str:
-    repo_root = trellis_dir.parent
+    repo_root = code_root
     lines: list[str] = []
 
     try:
@@ -683,7 +712,7 @@ def _build_compact_current_state(
     lines.append(f"Developer: {developer or '(not initialized)'}")
     lines.append(_format_git_state(repo_root))
 
-    active = _resolve_active_task(trellis_dir, input_data)
+    active = _resolve_active_task(code_root, trellis_dir, input_data)
     if active.task_path:
         task_dir = _resolve_task_dir(trellis_dir, active.task_path)
         status = "unknown"
@@ -819,12 +848,13 @@ def main():
     if project_dir is None:
         project_dir = Path(_normalize_windows_shell_path(hook_input.get("cwd", "."))).resolve()
 
-    trellis_dir = project_dir / ".trellis"
+    code_root, trellis_dir = _resolve_trellis_dir(project_dir)
     context_key = _resolve_context_key(trellis_dir, hook_input)
     _persist_context_key_for_bash(context_key)
 
     # Load config for scope filtering and legacy detection
     is_mono, packages, scope_config, task_pkg, default_pkg = _load_trellis_config(
+        code_root,
         trellis_dir,
         hook_input,
     )
@@ -839,7 +869,9 @@ Trellis compact SessionStart context. Use it to orient the session; load details
 </session-context>
 
 """)
-    output.write(_build_first_reply_notice(_resolve_update_hint(trellis_dir, context_key)))
+    output.write(
+        _build_first_reply_notice(_resolve_update_hint(code_root, trellis_dir, context_key))
+    )
     output.write("\n\n")
 
     # Legacy migration warning
@@ -848,7 +880,9 @@ Trellis compact SessionStart context. Use it to orient the session; load details
         output.write(f"<migration-warning>\n{legacy_warning}\n</migration-warning>\n\n")
 
     output.write("<current-state>\n")
-    output.write(_build_compact_current_state(trellis_dir, hook_input, spec_index_paths))
+    output.write(
+        _build_compact_current_state(code_root, trellis_dir, hook_input, spec_index_paths)
+    )
     output.write("\n</current-state>\n\n")
 
     output.write("<trellis-workflow>\n")
@@ -875,7 +909,7 @@ Trellis compact SessionStart context. Use it to orient the session; load details
     output.write("</guidelines>\n\n")
 
     # Check task status and inject structured tag
-    task_status = _get_task_status(trellis_dir, hook_input)
+    task_status = _get_task_status(code_root, trellis_dir, hook_input)
     output.write(f"<task-status>\n{task_status}\n</task-status>\n\n")
 
     output.write("""<ready>
@@ -883,6 +917,8 @@ Context loaded. Follow <task-status>. Load workflow/spec/task details only when 
 </ready>""")
 
     context_text = output.getvalue()
+    if (code_root / CONF_FILENAME).is_file():
+        context_text = render_workflow_paths(context_text, trellis_dir)
 
     # Kiro (CLI trellis agent agentSpawn) adds a hook's stdout directly to the
     # conversation context — no JSON envelope. Emit the bare overview text.

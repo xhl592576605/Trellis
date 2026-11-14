@@ -22,11 +22,12 @@ from __future__ import annotations
 
 import re
 
-from .paths import DIR_WORKFLOW, get_repo_root
+from .paths import workflow_dir, get_repo_root
+from .external_store import render_workflow_paths, resolve_store_for_root
 
 
 def _workflow_md_path():
-    return get_repo_root() / DIR_WORKFLOW / "workflow.md"
+    return workflow_dir() / "workflow.md"
 
 # Match a line that *is* a platform marker: "[A, B, C]" or "[/A, B, C]"
 _MARKER_RE = re.compile(r"^\[(/?)([A-Za-z][^\[\]]*)\]\s*$")
@@ -42,7 +43,9 @@ def _read_workflow() -> str:
     path = _workflow_md_path()
     if not path.exists():
         raise FileNotFoundError(f"workflow.md not found: {path}")
-    return path.read_text(encoding="utf-8")
+    content = path.read_text(encoding="utf-8")
+    store = resolve_store_for_root(get_repo_root())
+    return render_workflow_paths(content, store.project_dir) if store else content
 
 
 def _parse_marker(line: str) -> tuple[bool, list[str]] | None:

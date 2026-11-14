@@ -20,7 +20,7 @@ vi.mock("node:child_process", () => ({
 }));
 
 import { ablate, restore } from "../../src/commands/ablate.js";
-import { init } from "../../src/commands/init.js";
+import { initLegacy as init } from "../helpers/legacy-init.js";
 import {
   ABLATION_STATE_ROOT_ENV,
   fingerprintPath,

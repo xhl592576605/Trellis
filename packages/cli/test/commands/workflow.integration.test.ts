@@ -31,7 +31,7 @@ vi.mock("node:child_process", () => ({
   }),
 }));
 
-import { init } from "../../src/commands/init.js";
+import { initLegacy as init } from "../helpers/legacy-init.js";
 import { update } from "../../src/commands/update.js";
 import { runWorkflowCommand, WorkflowCommandError } from "../../src/commands/workflow.js";
 import { PATHS } from "../../src/constants/paths.js";

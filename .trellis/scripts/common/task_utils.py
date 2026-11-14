@@ -227,12 +227,24 @@ def resolve_task_dir(target_dir: str, repo_root: Path) -> Path | None:
         normalized = normalized[2:]
 
     tasks_dir = get_tasks_dir(repo_root)
+    # Lexical `.trellis/...` paths are remapped onto the workflow dir's real
+    # location: in external mode the in-project path may not exist on disk.
+    from .paths import workflow_dir
+
+    wf_dir = workflow_dir(repo_root)
 
     if Path(target_dir).is_absolute():
         candidate = Path(target_dir)
     elif "/" in normalized or normalized.startswith(".trellis"):
-        # Relative path (contains path separator or starts with .trellis)
-        candidate = repo_root / Path(normalized)
+        rel = normalized
+        if rel.startswith(".trellis/"):
+            rel = rel[len(".trellis/") :]
+        elif rel == ".trellis":
+            rel = "."
+        # Doubled separators (`.trellis\\tasks`) leave a leading `/` after
+        # the strip; pathlib would then treat the rest as absolute.
+        rel = rel.lstrip("/")
+        candidate = wf_dir / Path(rel)
     else:
         # Task name - must resolve inside the tasks directory. The historical
         # fallback to repo_root/<name> only ever produced a path the check

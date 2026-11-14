@@ -51,6 +51,9 @@ function setupRepo(tmp: string): void {
   git(tmp, "init", "-q", "-b", "main");
   // Local commit identity so commit() works in CI without global config.
   git(tmp, "config", "user.email", "test@example.com");
+  // Hermetic: a host's global excludes file (e.g. ~/.gitignore ignoring
+  // `.trellis`) would silently unstage every fixture path.
+  git(tmp, "config", "core.excludesFile", "/dev/null");
   git(tmp, "config", "user.name", "Test");
 
   // Stamp the real templates into the test repo.

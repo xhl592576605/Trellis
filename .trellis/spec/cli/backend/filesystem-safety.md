@@ -58,8 +58,9 @@ writeFileAtomic(hashesPath, JSON.stringify(payload, null, 2));
 ```
 
 > **Note**: atomic write fixes the *crash window*. It does **not** fix
-> concurrent last-writer-wins (multiple processes RMW the same file). File
-> locking / seq reconciliation is a separate, still-open concern.
+> concurrent last-writer-wins (multiple processes RMW the same file). External
+> workspace recording additionally holds a project-wide OS lock across the
+> complete operation; other writers need their own concurrency contract.
 
 ---
 
@@ -166,3 +167,226 @@ load-bearing (blocks `/work/ws-evil` matching trusted `/work/ws`). The OMP
 template carries a standalone verbatim copy of the parser/resolver; changes
 must be mirrored there. Do not relax to lexical checks — realpath containment
 is the defense from the 2026-07-10 audit (#409 family).
+
+
+## External local storage bootstrap (phases 1–4)
+
+### 1. Scope / Trigger
+
+Applies when a checkout has .treills.conf.json, including when its .trellis
+browse link is missing. The spelling of the locator is intentional. Fresh
+init defaults to ~/.trellis-wiki; existing physical layouts remain unchanged
+until explicit migration. External task commits, migration, and removal/restore
+are subsequent implementation phases and must not be inferred from bootstrap support.
+
+### 2. Signatures
+
+- CLI: init --storage [dir] --project <name>; both flags are optional.
+- Node: readExternalStore(codeRoot), workflowDirOf(codeRoot), runtimeDirOf(codeRoot).
+- Python: load_store(code_root), workflow_dir(repo_root), runtime_dir(repo_root).
+- Python context refs: resolve_project_path(path_ref, repo_root) returns Path or None.
+- Installation tracking: loadHashes(cwd) and saveHashes(cwd, hashes) expose one
+  logical map while persisting shared and checkout records separately.
+
+### 3. Contracts
+
+- Locator shape: {"storage": "~/.trellis-wiki", "project": "project-name"}.
+  Resolve relative storage against codeRoot; expand only ~ and ~/directory.
+- project.json contains name, absolute codeRoot, and gitCommonDir when available.
+  A plain directory must match codeRoot; Git checkouts must match the canonical
+  Git common directory. Linked worktrees may share data without replacing the
+  default reverse binding. Missing/damaged bindings fail closed.
+- Project names are single non-reserved directory names. Reject separators,
+  controls, Windows reserved names, trailing dots/whitespace, and dot segments.
+  The real project directory must remain a direct child of the real storage root.
+- Trust only codeRoot and the validated project directory. Logical .trellis/...
+  refs map to external data before realpath containment; code refs stay in codeRoot.
+- checkoutKey = first 16 hex characters of SHA256 of the canonical checkout path
+  (case-normalized on Windows), identical in Node and Python.
+- Shared hashes: project/.template-hashes.json, with .trellis/... keys only.
+  Checkout hashes/version: project/.runtime/checkouts/<checkoutKey>/.
+  Session pointers and shell tickets use that same checkout runtime directory.
+- Journal numbering, fingerprint classification, append, index update and optional
+  commit are enclosed by project/.runtime/workspace.lock. OS locks release on exit.
+  Atomic file replacement remains required inside the lock.
+- External init creates the workspace directory but leaves journal/index creation
+  to the first locked journal writer. Precreating untracked shared files makes
+  required commits fail the clean-baseline ownership check. Never bypass that
+  check to compensate for initialization. Re-init preserves existing journals.
+- Record actual writes in logical manifest keys, including writes outside codeRoot.
+  Re-init preserves shared template baselines for files it skipped. The root
+  locator and browse link belong to the checkout installation manifest.
+- Browse links are locally excluded via Git info/exclude. Runtime/cache files are
+  ignored in the storage repository. Links do not grant host sandbox permissions.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| No locator | Legacy read compatibility; fresh init chooses external storage |
+| Invalid explicit config or binding | Diagnose the configured path; never fall back |
+| Different plain project / different Git repository | Refuse without replacing the binding |
+| Same repository, another worktree | Allow; isolate session and installation records |
+| Project path/link escapes storage | Refuse before project data writes |
+| Browse link absent/wrong/broken | Config execution still works; init may repair the link |
+| Browse entry is a real directory | Preserve it; report that browsing could not be installed |
+| Two journal writers | Preserve both records, monotonic numbering and retry checkpoints |
+
+### 5. Good / Base / Bad Cases
+
+- Good: Pi and Codex in two worktrees share task/spec data, but load distinct
+  platform manifests and session pointers, even with the same session ID.
+- Base: remove the browse link, then run the external task/context/journal scripts.
+- Bad: use link existence as an initialization guard, rehash skipped user edits,
+  or treat atomic replace as a concurrent read/modify/write transaction.
+
+### 6. Tests Required
+
+- test/utils/external-store.test.ts: traversal, binding preservation, worktrees,
+  invalid JSON, ownership and symlink escape guards.
+- test/scripts/external-store-config.integration.test.ts: no-link phase/materials,
+  record context, concurrent journals, checkout/session isolation and rendered hooks.
+- test/commands/init-external-storage.integration.test.ts: default/custom init,
+  first journal and retry, re-init, separate Pi/Codex records, shared edit evidence,
+  shell quoting, update discovery and installed multi-platform hooks/JSON prompts.
+- Preserve the byte-identical Python dogfood/template regression. Actual Windows
+  junctions and host sandbox permissions require their corresponding environments.
+
+### 7. Wrong vs Correct
+
+Wrong: codeRoot / '.trellis' / 'workflow.md', assuming a browse link exists.
+Correct: workflow_dir(codeRoot) / 'workflow.md', after validating the locator.
+
+Wrong: save every checkout's platform hashes into the shared project manifest.
+Correct: shared workflow hashes plus one checkout-scoped installation manifest.
+
+
+## External transactions: commits, migration and removal (phases 5–7)
+
+### 1. Scope / Trigger
+
+Archive/journal commits, explicit storage migration, and checkout lifecycle
+commands with a root locator extend the bootstrap contracts above.
+
+### 2. Signatures
+
+- Python: `data_git_context(code_root)`, `storage_commit_lock(ctx)`,
+  `commit_task_archive(..., archive_ref=None)`.
+- CLI: `add_session.py --require-commit [--include-path <file>]`,
+  `task.py archive <task> [--no-commit]`.
+- CLI: `trellis update --migrate-storage [--storage <dir>] [--project <name>]
+  [--workspace <developer>] [--dry-run]`.
+- Node: `readExternalStore(codeRoot, configPath?)`; restore validates its
+  backed-up locator without publishing it first.
+
+### 3. Contracts
+
+**Commit ownership**
+
+- Code evidence/branches stay in the code repository. Journal HEAD/refs,
+  numbering and product commits use the storage repository.
+- Lock order is project workspace, then storage commit. Migration holds the
+  same OS locks through a Python child; stdin EOF releases the descriptors.
+- Use literal explicit product paths. Preserve unrelated staged work. Never
+  force-add ignored paths or commit the complete archive tree.
+- Persist exact archive destination, changed children and checkout/session
+  owner even for `--no-commit`. Retry only the caller's entries, or exact tasks
+  explicitly selected with `--require-commit --recover-archive <task>`. Invalid
+  recovery state fails closed; mutations of that state hold the storage lock.
+- A failed attempt can already have staged source deletes: consult HEAD as
+  well as the index before omitting source paths on retry.
+- Refuse before archive mutation if related child metadata is already dirty;
+  a JSON pathspec cannot distinguish another task's fields.
+- Journal/index commits require a clean pre-write baseline and exact writer
+  snapshots. Foreign markers, unmarked edits and later edits block commits,
+  including `session_auto_commit: false` plus `--require-commit`.
+- Required commits fail on ignored paths/Git failures. A committed idempotency
+  key still processes includes and owned archives. Includes name individual
+  product files or tracked deletions; directories/runtime/cache paths fail.
+
+**Storage migration**
+
+- The release gate runs before manifest/template mutation, independently of
+  whether the release contains rename/delete operations.
+- Dry-run never repairs links or creates storage/config/checkpoints.
+- Reject source symlinks/unsupported objects before creating storage. Build
+  and verify a separate import image; never overwrite destination edits.
+- Preserve the root workspace directory index at `workspace/history/index.md`,
+  flatten the selected author, and move other authors to history subdirectories.
+  Existing history/name conflicts fail rather than overwrite.
+- Checkout-scoped `storage-migration.json` records source/image digests,
+  backup name, initialization files, refresh baseline and phases
+  `prepared → committed → switched → refreshed → complete`.
+- Commit before switching, using the user's Git identity/hooks. Retain source
+  and checkpoint on failure. Only newly created root ignore/attribute files
+  join the initialization commit.
+- Rename source to the recorded backup, publish the locator, create the browse
+  link, and refresh current-checkout integration in the same command. Default
+  conflict handling preserves modified templates.
+- Persist the refresh baseline before writing templates. Refresh commits use
+  actual template/migration outputs; newer sibling task edits remain outside.
+
+**Checkout removal/restore**
+
+- Filter shared `.trellis/*` manifest keys before planning; handle locator
+  config and browse link explicitly. Pruning is in memory.
+- Missing browse links do not imply a missing install. Physical browse entries
+  in external mode are conflicts, never recursive-delete/backup targets.
+- Ablate snapshots local files/config/link only. Restore uses the runtime
+  parser's path, containment and Git-identity checks on the saved locator
+  before writing any checkout surface. Never roll back shared data.
+
+### 4. Validation & Error Matrix
+
+| Condition | Outcome |
+| --- | --- |
+| Other project's staged work | Excluded and left staged |
+| Foreign/manual shared journal edits | Non-zero checkpoint; bytes retained |
+| Hook fails after staging archive deletes | Retry includes source deletes and exact destination |
+| Same task name in older archive months | Only recorded destination committed |
+| Import into storage with existing HEAD | New untracked import is committed |
+| Copy/switch/refresh interrupted | Resume checkpoint; preserve originals and sibling writes |
+| Migration Git identity/hook failure | No identity override or false completion |
+| Missing browse link | Local lifecycle operations still work |
+| Physical browse entry | Refuse before mutation |
+| Missing/rebound external target | Restore rejects with zero checkout writes |
+
+### 5. Good / Base / Bad Cases
+
+- Good: deferred archive followed by the same session's final journal command.
+- Base: repeated migration repairs the link; its dry-run remains read-only.
+- Bad: deciding import emptiness using `git diff HEAD` before staging new
+  files; treating `project.json` existence as sufficient restore validation.
+
+### 6. Tests Required
+
+- `external-task-commit.integration.test.ts`: commit file lists, staged-work
+  preservation, simultaneous projects, manual/mixed journals, file/deletion
+  includes, pending ownership, staged-delete retry and exact archive month.
+- `update-migrate-storage.integration.test.ts`: previews, full import, existing
+  HEAD, workspace index, commit rejection, switch/refresh fault injection,
+  sibling preservation and empty-operation migration gate.
+- `external-lifecycle.integration.test.ts`: shared bytes unchanged, missing link,
+  physical-entry refusal, sibling writes and missing/rebound binding refusal.
+- CLI lint/typecheck/tests/build, Python checks and twin-tree comparison.
+  Windows junction and host sandbox behavior require their own environments.
+
+### 7. Wrong vs Correct
+
+```python
+# Wrong: a final commit skips ownership checks when auto-commit was disabled.
+if auto_commit_enabled:
+    check_foreign_records()
+
+# Correct: committing always requires attribution.
+if not verify_workspace_ownership() or foreign_pending_markers():
+    return COMMIT_MIXED
+```
+
+```ts
+// Wrong: existence can accept another project's rebound target.
+if (existsSync(join(projectDir, "project.json"))) restoreLocalFiles();
+// Correct: validate the saved locator against the current checkout.
+readExternalStore(transaction.state.projectRoot, backupConf);
+restoreAblationTransaction(transaction, options);
+```

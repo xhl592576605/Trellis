@@ -3,7 +3,9 @@ import { existsSync, readFileSync, readdirSync, statSync } from "fs"
 import { join } from "path"
 import { execFileSync } from "child_process"
 import { platform } from "os"
-import { debugLog } from "./trellis-context.js"
+import { debugLog, workflowDirOf, CONF_FILENAME } from "./trellis-context.js"
+import { existsSync as _confExists } from "fs"
+import { readExternalStore, renderWorkflowPaths } from "./external-store.js"
 
 const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 
@@ -118,7 +120,9 @@ function getTaskStatus(ctx, platformInput = null) {
 }
 
 function loadTrellisConfig(directory, contextKey = null) {
-  const scriptPath = join(directory, ".trellis", "scripts", "get_context.py")
+  // External mode: the script lives in the external project dir; the cwd
+  // stays the real code root.
+  const scriptPath = join(workflowDirOf(directory), "scripts", "get_context.py")
   if (!existsSync(scriptPath)) {
     return { isMonorepo: false, packages: {}, specScope: null, activeTaskPackage: null, defaultPackage: null }
   }
@@ -159,7 +163,7 @@ function checkLegacySpec(directory, config) {
     return null
   }
 
-  const specDir = join(directory, ".trellis", "spec")
+  const specDir = join(workflowDirOf(directory), "spec")
   if (!existsSync(specDir)) return null
 
   let hasLegacy = false
@@ -222,7 +226,7 @@ function resolveSpecScope(config) {
 }
 
 function collectSpecIndexPaths(directory, allowedPkgs) {
-  const specDir = join(directory, ".trellis", "spec")
+  const specDir = join(workflowDirOf(directory), "spec")
   const paths = []
 
   const guidesIndex = join(specDir, "guides", "index.md")
@@ -276,7 +280,7 @@ function collectSpecIndexPaths(directory, allowedPkgs) {
 
 function readDeveloper(directory) {
   try {
-    const content = readFileSync(join(directory, ".trellis", ".developer"), "utf-8")
+    const content = readFileSync(join(workflowDirOf(directory), ".developer"), "utf-8")
     for (const line of content.split(/\r?\n/)) {
       if (line.startsWith("name=")) return line.slice("name=".length).trim()
     }
@@ -327,7 +331,7 @@ function buildCompactCurrentState(ctx, platformInput, specIndexPaths) {
     lines.push("Current task: none.")
   }
 
-  const tasksDir = join(directory, ".trellis", "tasks")
+  const tasksDir = join(workflowDirOf(directory), "tasks")
   if (existsSync(tasksDir)) {
     try {
       const activeTasks = readdirSync(tasksDir, { withFileTypes: true })
@@ -339,7 +343,12 @@ function buildCompactCurrentState(ctx, platformInput, specIndexPaths) {
   }
 
   const developer = readDeveloper(directory)
-  const workspaceDir = join(directory, ".trellis", "workspace", developer)
+  // External single-user mode keeps a flat workspace (no developer segment).
+  const wf = workflowDirOf(directory)
+  const externalMode = _confExists(join(directory, CONF_FILENAME))
+  const workspaceDir = externalMode
+    ? join(wf, "workspace")
+    : join(wf, "workspace", developer)
   if (developer !== "(not initialized)" && existsSync(workspaceDir)) {
     try {
       const journals = readdirSync(workspaceDir)
@@ -349,7 +358,10 @@ function buildCompactCurrentState(ctx, platformInput, specIndexPaths) {
       if (journal) {
         const journalPath = join(workspaceDir, journal)
         const lineCount = readFileSync(journalPath, "utf-8").split(/\r?\n/).length
-        lines.push(`Journal: .trellis/workspace/${developer}/${journal}, ${lineCount} / 2000 lines.`)
+        const journalDisplay = externalMode
+          ? `.trellis/workspace/${journal}`
+          : `.trellis/workspace/${developer}/${journal}`
+        lines.push(`Journal: ${journalDisplay}, ${lineCount} / 2000 lines.`)
       }
     } catch {
       // Ignore journal errors
@@ -453,7 +465,9 @@ Trellis compact SessionStart context. Use it to orient the session; load details
 Context loaded. Follow <task-status>. Load workflow/spec/task details only when needed.
 </ready>`)
 
-  return parts.join("\n\n")
+  const content = parts.join("\n\n")
+  const store = readExternalStore(directory)
+  return store ? renderWorkflowPaths(content, store.projectDir) : content
 }
 
 function getTrellisMetadata(metadata) {

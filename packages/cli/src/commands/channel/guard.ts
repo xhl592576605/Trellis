@@ -23,7 +23,7 @@ import {
   type WorkerState,
 } from "@mindfoldhq/trellis-core/channel";
 
-import { DIR_NAMES } from "../../constants/paths.js";
+import { resolveWorkflowDir } from "../../utils/external-store.js";
 
 import {
   channelDir,
@@ -160,7 +160,7 @@ interface ProjectGuardConfig {
 export function loadWorkerGuardConfig(
   cwd: string,
 ): ProjectGuardConfig | undefined {
-  const configPath = path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml");
+  const configPath = path.join(resolveWorkflowDir(cwd), "config.yaml");
   if (!fs.existsSync(configPath)) return undefined;
   let content: string;
   try {

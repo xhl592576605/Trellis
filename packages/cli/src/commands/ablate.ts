@@ -43,6 +43,11 @@ import {
 } from "../utils/managed-removal.js";
 import { pruneOrphanManifestKeys } from "../utils/manifest-prune.js";
 import { loadHashes } from "../utils/template-hash.js";
+import {
+  CONF_FILENAME,
+  isExternalMode,
+  readExternalStore,
+} from "../utils/external-store.js";
 
 export interface AblateOptions {
   yes?: boolean;
@@ -239,6 +244,7 @@ function buildAblationEntries(
   projectRoot: string,
   plan: ManagedRemovalPlan,
   prunableDirectories: readonly string[],
+  external: boolean,
 ): AblationEntry[] {
   const entries: AblationEntry[] = [];
   const seen = new Set<string>();
@@ -255,6 +261,7 @@ function buildAblationEntries(
   }
 
   for (const modification of plan.modifications) {
+    if (isTrellisPath(modification.posixPath)) continue;
     const pre = fingerprintPath(modification.absPath);
     if (pre.kind !== "file") {
       throw new Error(
@@ -280,6 +287,19 @@ function buildAblationEntries(
     );
   }
 
+  // External mode: the locator config is a checkout-owned surface. Without
+  // removing it, config-driven injection would keep re-activating Trellis
+  // after ablation (design §10).
+  if (external) {
+    addEntry(
+      entries,
+      seen,
+      CONF_FILENAME,
+      fingerprintPath(path.join(projectRoot, CONF_FILENAME)),
+      { kind: "absent" },
+    );
+  }
+
   const trellisPath = path.join(projectRoot, DIR_NAMES.WORKFLOW);
   addEntry(entries, seen, DIR_NAMES.WORKFLOW, fingerprintPath(trellisPath), {
     kind: "absent",
@@ -292,6 +312,7 @@ function applyAblationPlan(
   plan: ManagedRemovalPlan,
   prunableDirectories: readonly string[],
   transaction: LoadedAblationTransaction,
+  external: boolean,
 ): void {
   const preByPath = new Map(
     transaction.state.entries.map((entry) => [entry.relativePath, entry.pre]),
@@ -318,9 +339,17 @@ function applyAblationPlan(
   const trellisPath = path.join(projectRoot, DIR_NAMES.WORKFLOW);
   const trellisStat = lstatIfPresent(trellisPath);
   if (trellisStat?.isSymbolicLink()) {
+    // Browse link: unlink the link, never the external target (§10).
     fs.unlinkSync(trellisPath);
   } else if (trellisStat) {
     fs.rmSync(trellisPath, { recursive: true, force: false });
+  }
+
+  if (external) {
+    const confPath = path.join(projectRoot, CONF_FILENAME);
+    if (lstatIfPresent(confPath)) {
+      fs.unlinkSync(confPath);
+    }
   }
 
   for (const relativeDir of prunableDirectories) {
@@ -367,7 +396,14 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
   }
 
   const trellisPath = path.join(projectRoot, DIR_NAMES.WORKFLOW);
-  if (!lstatIfPresent(trellisPath)) {
+  const external = isExternalMode(projectRoot);
+  const browseStat = lstatIfPresent(trellisPath);
+  if (external && browseStat && !browseStat.isSymbolicLink()) {
+    throw new Error(
+      "Refusing to remove a physical .trellis browse entry; move it aside first.",
+    );
+  }
+  if (!browseStat && !external) {
     console.log(chalk.gray("Trellis is not installed in this project."));
     return;
   }
@@ -390,9 +426,25 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
       chalk.gray(`Pruned ${pruned.length} orphan manifest entries in memory.`),
     );
   }
+
+  // External mode: `.trellis/*` manifest keys describe SHARED product data
+  // in the storage repository — never a surface of this checkout to
+  // subtract, and never a rollback snapshot to take (design §10). Strict
+  // path validation would (correctly) reject them through the browse link,
+  // so they are filtered out before planning rather than let through.
+  const scopedManifest = external
+    ? Object.fromEntries(
+        Object.entries(prunedManifest).filter(
+          ([key]) =>
+            key !== DIR_NAMES.WORKFLOW &&
+            !key.startsWith(`${DIR_NAMES.WORKFLOW}/`),
+        ),
+      )
+    : prunedManifest;
+
   let plan: ManagedRemovalPlan;
   try {
-    plan = buildManagedRemovalPlan(projectRoot, prunedManifest, {
+    plan = buildManagedRemovalPlan(projectRoot, scopedManifest, {
       strictPaths: true,
     });
   } catch (error) {
@@ -404,6 +456,13 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
   }
   const prunableDirectories = collectPrunableDirectories(projectRoot, plan);
   renderAblatePlan(plan, prunableDirectories, transactionPaths.transactionDir);
+  if (external) {
+    console.log(
+      chalk.green(
+        "External storage data is NOT ablated: tasks/specs/journals/scripts stay in the storage repository; only this checkout's integrations, locator config and browse link are subtracted.",
+      ),
+    );
+  }
   if (options.dryRun) {
     console.log(
       chalk.gray("Dry run — no files or recovery state were modified."),
@@ -422,7 +481,12 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
     }
   }
 
-  const entries = buildAblationEntries(projectRoot, plan, prunableDirectories);
+  const entries = buildAblationEntries(
+    projectRoot,
+    plan,
+    prunableDirectories,
+    external,
+  );
   withAblationProjectLock(transactionPaths, () => {
     if (lstatIfPresent(transactionPaths.transactionDir)) {
       throw new Error(
@@ -433,13 +497,19 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
       {
         projectRoot,
         configuredPlatforms: [...configuredPlatforms],
-        manifest: prunedManifest,
+        manifest: scopedManifest,
         entries,
       },
       { lockHeld: true },
     );
     try {
-      applyAblationPlan(projectRoot, plan, prunableDirectories, transaction);
+      applyAblationPlan(
+        projectRoot,
+        plan,
+        prunableDirectories,
+        transaction,
+        external,
+      );
       verifyAblatedState(transaction);
       transitionAblationState(transaction, "applied");
     } catch (error) {
@@ -458,6 +528,39 @@ export async function ablate(options: AblateOptions = {}): Promise<void> {
   );
 }
 
+/**
+ * External-mode restore gate: verify the external store the backed-up
+ * locator config points at still exists before restoring any checkout
+ * surface. Restoring a link/config to a vanished store would re-activate
+ * config-driven injection against missing data; and we never roll back the
+ * external data itself, so there is no snapshot to recreate it from.
+ */
+function verifyExternalBindingForRestore(
+  transaction: LoadedAblationTransaction,
+): void {
+  const hasConf = transaction.state.entries.some(
+    (entry) => entry.relativePath === CONF_FILENAME,
+  );
+  if (!hasConf) return;
+  const backupConf = path.join(
+    transaction.paths.transactionDir,
+    "backup",
+    CONF_FILENAME,
+  );
+  // Use the same parser, containment and Git-identity checks as runtime.
+  // Merely finding project.json does not prove it still belongs to this checkout.
+  try {
+    const store = readExternalStore(transaction.state.projectRoot, backupConf);
+    if (!store) throw new Error(`Missing backed-up locator: ${backupConf}`);
+  } catch (error) {
+    throw new Error(
+      "Cannot restore the external storage binding: " +
+        (error instanceof Error ? error.message : String(error)),
+      { cause: error },
+    );
+  }
+}
+
 export async function restore(options: RestoreOptions = {}): Promise<void> {
   assertCommandCwd("restore");
   const projectRoot = canonicalProjectRoot(process.cwd());
@@ -468,6 +571,7 @@ export async function restore(options: RestoreOptions = {}): Promise<void> {
     );
     return;
   }
+  verifyExternalBindingForRestore(transaction);
   renderRestorePlan(transaction);
   if (!options.dryRun && !options.yes) {
     if (!process.stdin.isTTY) refuseNonInteractivePrompt("restore");

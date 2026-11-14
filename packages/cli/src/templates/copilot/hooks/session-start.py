@@ -110,9 +110,41 @@ def should_skip_injection() -> bool:
     return os.environ.get("COPILOT_NON_INTERACTIVE") == "1"
 
 
+# Root-config filename (the double-l is the user's explicit spelling).
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from common.external_store import load_store, render_workflow_paths
+
+# {{EXTERNAL_STORE_BOOTSTRAP}}
+
+CONF_FILENAME = ".treills.conf.json"
+
+
+def _resolve_trellis_dir(project_dir: Path) -> tuple[Path, Path]:
+    """Resolve config before legacy markers; a damaged binding never falls back."""
+    start = project_dir.resolve()
+    candidates = [start, *start.parents]
+    for root in candidates:
+        if (root / CONF_FILENAME).is_file():
+            return root, load_store(root).project_dir
+    for root in candidates:
+        if (root / ".trellis").is_dir():
+            return root, root / ".trellis"
+    return start, start / ".trellis"
+
+
+
+def _config_workflow_dir(conf: Path, code_root: Path) -> Path:
+    """Validate the explicit locator rather than reading a browse link."""
+    return load_store(code_root).project_dir
+
+
+
 def configure_project_encoding(project_dir: Path) -> None:
     """Reuse Trellis' shared Windows stdio encoding helper before JSON output."""
-    scripts_dir = project_dir / ".trellis" / "scripts"
+    _code_root, trellis_dir = _resolve_trellis_dir(project_dir)
+    scripts_dir = trellis_dir / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
 
@@ -132,7 +164,8 @@ def read_file(path: Path, fallback: str = "") -> str:
 
 
 def _resolve_context_key(project_dir: Path, hook_input: dict) -> str | None:
-    scripts_dir = project_dir / ".trellis" / "scripts"
+    _code_root, trellis_dir = _resolve_trellis_dir(project_dir)
+    scripts_dir = trellis_dir / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     try:
@@ -142,13 +175,13 @@ def _resolve_context_key(project_dir: Path, hook_input: dict) -> str | None:
     return resolve_context_key(hook_input, platform="copilot")
 
 
-def _resolve_active_task(trellis_dir: Path, hook_input: dict):
+def _resolve_active_task(code_root: Path, trellis_dir: Path, hook_input: dict):
     scripts_dir = trellis_dir / "scripts"
     if str(scripts_dir) not in sys.path:
         sys.path.insert(0, str(scripts_dir))
     from common.active_task import resolve_active_task  # type: ignore[import-not-found]
 
-    return resolve_active_task(trellis_dir.parent, hook_input, platform="copilot")
+    return resolve_active_task(code_root, hook_input, platform="copilot")
 
 
 def run_script(script_path: Path, context_key: str | None = None) -> str:
@@ -198,12 +231,14 @@ def _resolve_task_dir(trellis_dir: Path, task_ref: str) -> Path:
     if path_obj.is_absolute():
         return path_obj
     if normalized.startswith(".trellis/"):
-        return trellis_dir.parent / path_obj
+        # Lexical `.trellis/...` display refs map onto the workflow dir.
+        # lstrip keeps doubled separators from making the rest absolute.
+        return trellis_dir / path_obj.relative_to(".trellis").as_posix().lstrip("/")
     return trellis_dir / "tasks" / path_obj
 
 
-def _get_task_status(trellis_dir: Path, hook_input: dict) -> str:
-    active = _resolve_active_task(trellis_dir, hook_input)
+def _get_task_status(code_root: Path, trellis_dir: Path, hook_input: dict) -> str:
+    active = _resolve_active_task(code_root, trellis_dir, hook_input)
     if not active.task_path:
         return (
             "Status: NO ACTIVE TASK\n"
@@ -336,11 +371,12 @@ def _collect_spec_index_paths(trellis_dir: Path) -> list[str]:
 
 
 def _build_compact_current_state(
+    code_root: Path,
     trellis_dir: Path,
     hook_input: dict,
     spec_index_paths: list[str],
 ) -> str:
-    repo_root = trellis_dir.parent
+    repo_root = code_root
     lines: list[str] = []
 
     try:
@@ -357,7 +393,7 @@ def _build_compact_current_state(
     lines.append(f"Developer: {developer or '(not initialized)'}")
     lines.append(_format_git_state(repo_root))
 
-    active = _resolve_active_task(trellis_dir, hook_input)
+    active = _resolve_active_task(code_root, trellis_dir, hook_input)
     if active.task_path:
         task_dir = _resolve_task_dir(trellis_dir, active.task_path)
         status = "unknown"
@@ -463,7 +499,7 @@ def main() -> None:
 
     configure_project_encoding(project_dir)
 
-    trellis_dir = project_dir / ".trellis"
+    code_root, trellis_dir = _resolve_trellis_dir(project_dir)
     spec_index_paths = _collect_spec_index_paths(trellis_dir)
 
     output = StringIO()
@@ -475,7 +511,9 @@ Trellis compact SessionStart context. Use it to orient the session; load details
 """)
 
     output.write("<current-state>\n")
-    output.write(_build_compact_current_state(trellis_dir, hook_input, spec_index_paths))
+    output.write(
+        _build_compact_current_state(code_root, trellis_dir, hook_input, spec_index_paths)
+    )
     output.write("\n</current-state>\n\n")
 
     output.write("<trellis-workflow>\n")
@@ -501,7 +539,7 @@ Trellis compact SessionStart context. Use it to orient the session; load details
     )
     output.write("</guidelines>\n\n")
 
-    task_status = _get_task_status(trellis_dir, hook_input)
+    task_status = _get_task_status(code_root, trellis_dir, hook_input)
     output.write(f"<task-status>\n{task_status}\n</task-status>\n\n")
 
     output.write("""<ready>
@@ -509,6 +547,8 @@ Context loaded. Follow <task-status>. Load workflow/spec/task details only when 
 </ready>""")
 
     context = output.getvalue()
+    if (code_root / CONF_FILENAME).is_file():
+        context = render_workflow_paths(context, trellis_dir)
     result = {
         "suppressOutput": True,
         "hookSpecificOutput": {

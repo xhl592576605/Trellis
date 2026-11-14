@@ -47,6 +47,7 @@ Before writing backend code, read the relevant guidelines based on your task:
 - Modifying `init.ts` flow (new triggers, dispatch branches, bootstrap/joiner) → [platform-integration.md "Bootstrap & Joiner Task Auto-Generation"](./platform-integration.md) — two-point wiring + `.developer` signal
 - Script work → [script-conventions.md](./script-conventions.md)
 - Migration system → [migrations.md](./migrations.md)
+- External storage, root locators, browse links, checkout installation records, or shared journals → [filesystem-safety.md "External local storage bootstrap"](./filesystem-safety.md#external-local-storage-bootstrap-phases-14)
 - Writing/deleting/moving/overwriting files in a user repo (any `writeFileSync`, `rmSync`, `renameSync`, `shutil.move`, or user/agent-supplied path segment) → [filesystem-safety.md](./filesystem-safety.md)
 - Cutting a release / cross-branch submodule coordination / manifest continuity / npm publishing → [release-process.md](./release-process.md)
 - Editing `packages/core/**`, moving reusable CLI logic into core, or changing CLI imports from `@mindfoldhq/trellis-core` → [trellis-core-sdk.md](./trellis-core-sdk.md)

@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .external_store import find_workflow_root, workflow_dir as _external_workflow_dir, runtime_dir
 from .io import read_json as _io_read_json, write_json as _io_write_json
 
 DIR_WORKFLOW = ".trellis"
@@ -215,20 +216,28 @@ def resolve_task_ref(task_ref: str, repo_root: Path) -> Path | None:
     except OSError:
         return None
 
+    # Candidates are built from the workflow dir's real location, not
+    # repo_root/.trellis: in external mode the in-project lexical path may not
+    # exist at all (no browse link), and a name-only ref must resolve into the
+    # external tasks dir. Lexical `.trellis/...` refs map onto the workflow
+    # dir for the same reason.
+    wf_dir = _external_workflow_dir(root)
     path_obj = Path(normalized)
     if path_obj.is_absolute():
         candidate = path_obj
     elif normalized.startswith(f"{DIR_WORKFLOW}/"):
-        candidate = root / path_obj
+        # lstrip: doubled separators (`.trellis\\tasks`) leave a leading
+        # `/` after the strip; pathlib would treat the rest as absolute.
+        candidate = wf_dir / path_obj.relative_to(DIR_WORKFLOW).as_posix().lstrip("/")
     else:
-        candidate = root / DIR_WORKFLOW / DIR_TASKS / path_obj
+        candidate = wf_dir / DIR_TASKS / path_obj
 
     # Both sides are resolved because repo_root itself may sit behind a
     # symlink (/tmp on macOS does), and resolve() is what collapses `..`
     # instead of leaving it for a lexical relative_to() to wave through.
     try:
         resolved = candidate.resolve()
-        workflow_real = (root / DIR_WORKFLOW).resolve()
+        workflow_real = _external_workflow_dir(root).resolve()
     except OSError:
         return None
 
@@ -238,20 +247,25 @@ def resolve_task_ref(task_ref: str, repo_root: Path) -> Path | None:
     except ValueError:
         pass
 
-    # `.trellis` may itself be a symlink into a store outside the repo (#567).
-    # The workflow dir's own real location is then a second legitimate
-    # containment base; a ref that escapes BOTH bases is still refused. Map
-    # back to the in-repo (lexical) form so callers store a repo-relative ref.
+    # The workflow dir's real location is a second legitimate containment
+    # base: it is either a linked store (#567) or the external project dir
+    # resolved from the root config. A ref that escapes BOTH bases is still
+    # refused. When the workflow dir is a repo-internal lexical path, map
+    # back to the in-repo form so callers store a repo-relative ref; in
+    # external mode (no browse link) the resolved real path is the only one
+    # that exists on disk.
     try:
         rel = resolved.relative_to(workflow_real)
     except ValueError:
         return None
 
-    return root / DIR_WORKFLOW / rel
+    if workflow_real == (root / DIR_WORKFLOW).resolve():
+        return root / DIR_WORKFLOW / rel
+    return resolved
 
 
 def _runtime_sessions_dir(repo_root: Path) -> Path:
-    return repo_root / DIR_WORKFLOW / DIR_RUNTIME / DIR_SESSIONS
+    return runtime_dir(repo_root) / DIR_SESSIONS
 
 
 def _sanitize_key(raw: str) -> str:
@@ -369,20 +383,14 @@ def _lookup_env_context_key(platform_name: str | None) -> str | None:
 
 
 def _find_repo_root_from_cwd() -> Path | None:
-    current = Path.cwd().resolve()
-    while True:
-        if (current / DIR_WORKFLOW).is_dir():
-            return current
-        if current == current.parent:
-            return None
-        current = current.parent
+    return find_workflow_root(Path.cwd())
 
 
 def _shell_ticket_dirs(repo_root: Path) -> tuple[Path, ...]:
-    runtime_dir = repo_root / DIR_WORKFLOW / DIR_RUNTIME
+    root = runtime_dir(repo_root)
     return (
-        runtime_dir / DIR_SHELL_TICKETS,
-        runtime_dir / DIR_LEGACY_CURSOR_SHELL_TICKETS,
+        root / DIR_SHELL_TICKETS,
+        root / DIR_LEGACY_CURSOR_SHELL_TICKETS,
     )
 
 
@@ -586,10 +594,17 @@ def _canonical_task_ref(task_path: str, repo_root: Path) -> str | None:
     try:
         return full_path.relative_to(repo_root.resolve()).as_posix()
     except ValueError:
-        # resolve_task_ref already refused everything outside the repo, so this
-        # is unreachable. Refuse rather than fall back to an absolute path —
-        # that fallback is how an out-of-repo ref used to reach the session
-        # pointer and get replayed on every later turn.
+        pass
+    # External mode: the resolved task dir lives under the external project
+    # dir, not the code root. Map it back to the stable `.trellis/...` display
+    # form so stored refs stay identical across legacy and external layouts.
+    try:
+        workflow_real = _external_workflow_dir(repo_root).resolve()
+        return (Path(DIR_WORKFLOW) / full_path.relative_to(workflow_real)).as_posix()
+    except (ValueError, OSError):
+        # resolve_task_ref already refused everything outside both bases;
+        # refusing rather than storing an absolute path keeps an out-of-repo
+        # ref out of the session pointer.
         return None
 
 
@@ -609,7 +624,7 @@ def _relative_task_ref(task_path: str, repo_root: Path) -> str:
     try:
         resolved = candidate.resolve()
         root = repo_root.resolve()
-        workflow_real = (root / DIR_WORKFLOW).resolve()
+        workflow_real = _external_workflow_dir(repo_root).resolve()
     except OSError:
         return ""
     try:
@@ -617,8 +632,9 @@ def _relative_task_ref(task_path: str, repo_root: Path) -> str:
     except ValueError:
         pass
     # Same dual-base containment as resolve_task_ref: a path through a
-    # symlinked `.trellis` (#567) maps back to its in-repo form; anything
-    # outside both bases is refused rather than stored as an absolute pointer.
+    # linked or external workflow dir maps back to its `.trellis/...` form;
+    # anything outside both bases is refused rather than stored as an
+    # absolute pointer.
     try:
         rel = resolved.relative_to(workflow_real)
     except ValueError:

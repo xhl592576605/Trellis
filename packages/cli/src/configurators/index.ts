@@ -141,7 +141,7 @@ export function getConfiguredPlatforms(cwd: string): Set<AITool> {
 
   for (const id of PLATFORM_IDS) {
     const configDir = AI_TOOLS[id].configDir;
-    const templates = collectPlatformTemplates(id);
+    const templates = PLATFORM_FUNCTIONS[id].collectTemplates?.();
     const hasTrackedTemplate = [...(templates?.keys() ?? [])].some(
       (relativePath) =>
         (relativePath === configDir ||

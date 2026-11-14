@@ -83,6 +83,7 @@ from .paths import (
     clear_current_task,
     has_current_task,
     generate_task_date_prefix,
+    workflow_dir,
 )
 
 from .active_task import (

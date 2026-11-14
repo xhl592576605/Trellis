@@ -1,7 +1,9 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { findCodeRoot as findStoreRoot, workflowDirOf as resolveStoreWorkflowDir, runtimeDirOf, renderWorkflowPaths } from "./external-store.js";
 import { createHash, randomBytes } from "node:crypto";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
 
 type JsonObject = Record<string, unknown>;
 interface PiExtensionContext {
@@ -97,20 +99,18 @@ function cmdHasTrellisCtx(cmd: string) {
   );
 }
 
+// Root-config filename (the double-l is the user's explicit spelling).
+const CONF_FILENAME = ".treills.conf.json";
+
 function findRoot(start: string): string {
-  let c = resolve(start);
-  while (true) {
-    // Only a directory with `.trellis/` is a Trellis project root. A bare
-    // `.pi` can be pi's global config (`~/.pi`) or an unrelated project, so
-    // accepting it here made root resolution stop too early (e.g. on `~`).
-    // Also reject a regular file named `.trellis` — the marker must be a
-    // directory.
-    const marker = join(c, ".trellis");
-    if (existsSync(marker) && statSync(marker).isDirectory()) return c;
-    const p = dirname(c);
-    if (p === c) return resolve(start);
-    c = p;
-  }
+  return findStoreRoot(start) ?? resolve(start);
+}
+
+// Workflow data dir: the external project dir when the code root carries a
+// root config, else the legacy `<root>/.trellis`. Never resolved through the
+// in-project browse link — config is the single runtime source of truth.
+function workflowDir(root: string): string {
+  return resolveStoreWorkflowDir(root);
 }
 // Resolve the project root from the session working directory when available
 // (pi's ExtensionContext.cwd), falling back to the pi host process cwd.
@@ -159,10 +159,26 @@ function contextKey(input?: unknown, ctx?: PiExtensionContext): string | null {
  * `root` itself sits behind a symlink (`/tmp` does on macOS).
  */
 function containInRoot(root: string, candidate: string): string | null {
+  return containInAnyRoot([root], candidate);
+}
+
+// A task ref is legal inside the code root OR the bound workflow dir — the
+// workflow dir's real location is a second containment base, mirroring the
+// Python resolver (external store or symlinked `.trellis`, #567).
+function containInAnyRoot(roots: string[], candidate: string): string | null {
   try {
-    const rel = relative(realpathSync(root), realpathSync(candidate));
-    if (rel !== "" && (rel.startsWith("..") || isAbsolute(rel))) return null;
-    return candidate;
+    const resolved = realpathSync(candidate);
+    for (const root of roots) {
+      try {
+        const rel = relative(realpathSync(root), resolved);
+        if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) {
+          return candidate;
+        }
+      } catch {
+        // Unresolvable root base — try the next one.
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -171,20 +187,22 @@ function containInRoot(root: string, candidate: string): string | null {
 function readTaskDir(root: string, key: string | null): string | null {
   if (!key) return null;
   try {
+    const wf = workflowDir(root);
     const ctx = JSON.parse(
-      readText(join(root, ".trellis", ".runtime", "sessions", `${key}.json`)),
+      readText(join(runtimeDirOf(root), "sessions", `${key}.json`)),
     ) as JsonObject;
     let ref = str(ctx.current_task);
     if (!ref) return null;
-    ref = ref;
     ref = ref.replace(/\\/g, "/").replace(/^\.\//, "");
     if (ref.startsWith("tasks/")) ref = `.trellis/${ref}`;
+    // Lexical `.trellis/...` display refs map onto the workflow dir's real
+    // location; name-only refs resolve inside its tasks tree.
     const candidate = ref.startsWith(".trellis/")
-      ? join(root, ref)
+      ? join(wf, ref.slice(".trellis/".length))
       : isAbsolute(ref)
         ? ref
-        : join(root, ".trellis", "tasks", ref);
-    return containInRoot(root, candidate);
+        : join(wf, "tasks", ref);
+    return containInAnyRoot([root, wf], candidate);
   } catch {
     return null;
   }
@@ -194,7 +212,9 @@ function readTaskDir(root: string, key: string | null): string | null {
 const WF_RE =
   /\[workflow-state:([A-Za-z0-9_-]+)\]\s*\n([\s\S]*?)\n\s*\[\/workflow-state:\1\]/g;
 function workflowBreadcrumb(root: string, key: string | null): string {
-  const wf = readText(join(root, ".trellis", "workflow.md"));
+  const workflowRoot = workflowDir(root);
+  let wf = readText(join(workflowRoot, "workflow.md"));
+  if (existsSync(join(root, CONF_FILENAME))) wf = renderWorkflowPaths(wf, workflowRoot);
   if (!wf) return "";
   const templates: Record<string, string> = {};
   for (const m of wf.matchAll(WF_RE)) {
@@ -222,7 +242,7 @@ function workflowBreadcrumb(root: string, key: string | null): string {
 
 // ── Session Overview ───────────────────────────────────────────────────
 function runContextScript(root: string, key: string | null, args: string[]): string {
-  const script = join(root, ".trellis", "scripts", "get_context.py");
+  const script = join(workflowDir(root), "scripts", "get_context.py");
   if (!exists(script)) return "";
   try {
     const py = process.platform === "win32" ? "python" : "python3";

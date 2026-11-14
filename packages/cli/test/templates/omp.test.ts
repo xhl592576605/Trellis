@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import vm from "node:vm";
+import * as externalStore from "../../src/templates/shared-hooks/external-store.js";
 import ts from "typescript";
 import { getExtensionTemplate } from "../../src/templates/omp/index.js";
 import { collectOmpTemplates } from "../../src/configurators/omp.js";
@@ -33,7 +34,7 @@ function loadOmpExtension(): OmpExtension {
     exports: moduleObject.exports,
     module: moduleObject,
     process: sandboxProcess,
-    require,
+    require: (specifier: string) => specifier === "./external-store.js" ? externalStore : require(specifier),
   });
   vm.runInContext(compiled, sandbox);
   const extension = moduleObject.exports.default;

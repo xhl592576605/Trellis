@@ -125,6 +125,15 @@ program
     "Workflow template id for .trellis/workflow.md (default: native; e.g., tdd, channel-driven-subagent-dispatch)",
   )
   .option(
+    "--storage [dir]",
+    "External storage mode: keep .trellis data in a local Git store " +
+      "(default ~/.trellis-wiki) instead of the project directory",
+  )
+  .option(
+    "--project <name>",
+    "External project directory name (external storage mode only)",
+  )
+  .option(
     "--workflow-source <source>",
     "Custom marketplace source for the --workflow lookup (e.g., gh:myorg/myrepo/marketplace)",
   )
@@ -162,6 +171,22 @@ program
   .option("-n, --create-new", "Create .new copies for all changed files")
   .option("--allow-downgrade", "Allow downgrading to an older version")
   .option("--migrate", "Apply pending file migrations (renames/deletions)")
+  .option(
+    "--migrate-storage",
+    "Explicitly migrate a legacy in-repo .trellis to the external store (copies, verifies, then switches config + browse link)",
+  )
+  .option(
+    "--storage [dir]",
+    "Storage root for --migrate-storage (default ~/.trellis-wiki)",
+  )
+  .option(
+    "--project [name]",
+    "External project name for --migrate-storage (default: current directory name)",
+  )
+  .option(
+    "--workspace [name]",
+    "Primary legacy workspace dir for --migrate-storage (multi-developer ambiguity)",
+  )
   .action(async (options: Record<string, unknown>) => {
     try {
       await update({
@@ -171,6 +196,10 @@ program
         createNew: options.createNew as boolean,
         allowDowngrade: options.allowDowngrade as boolean,
         migrate: options.migrate as boolean,
+        migrateStorage: options.migrateStorage as boolean,
+        storage: options.storage as string | undefined,
+        project: options.project as string | undefined,
+        workspace: options.workspace as string | undefined,
       });
     } catch (error) {
       console.error(

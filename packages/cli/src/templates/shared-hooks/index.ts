@@ -17,6 +17,16 @@ function readTemplate(relativePath: string): string {
   return readFileSync(join(__dirname, relativePath), "utf-8");
 }
 
+/** Standalone source emitted into each host; one contract for all bootstrap readers. */
+export function getExternalStoreBootstrap(language: "js" | "py"): string {
+  return language === "js"
+    ? readTemplate("external-store.js")
+    : readTemplate("../trellis/scripts/common/external_store.py").replace(
+        "from __future__ import annotations\n",
+        "",
+      );
+}
+
 export interface HookScript {
   /** Filename (e.g., "session-start.py") */
   name: string;

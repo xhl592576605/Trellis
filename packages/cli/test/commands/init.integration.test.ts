@@ -46,7 +46,7 @@ vi.mock("giget", async () => {
 
 // === Imports ===
 
-import { init } from "../../src/commands/init.js";
+import { initLegacy as init } from "../helpers/legacy-init.js";
 import { VERSION } from "../../src/constants/version.js";
 import { DIR_NAMES, FILE_NAMES, PATHS } from "../../src/constants/paths.js";
 import { collectPlatformTemplates } from "../../src/configurators/index.js";
@@ -60,7 +60,7 @@ import { execSync } from "node:child_process";
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 const noop = () => {};
 
-describe("init() integration", () => {
+describe("init() legacy-layout integration", () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -929,7 +929,7 @@ describe("init() integration", () => {
     await expect(init({ yes: true, claude: true })).rejects.toThrow(
       /No supported Python command found.*Python 3\.8\.18 \(< 3\.9\)/s,
     );
-    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
+    expect(fs.readdirSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toEqual([]);
   });
 
   it("#7c throws when the selected Python command is missing", async () => {
@@ -942,7 +942,7 @@ describe("init() integration", () => {
     await expect(init({ yes: true, claude: true })).rejects.toThrow(
       /No supported Python command found.*not found/s,
     );
-    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
+    expect(fs.readdirSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toEqual([]);
   });
 
   it("#7d renders the platform Python command into generated config and logs the adaptation", async () => {
@@ -1211,8 +1211,8 @@ describe("init() integration", () => {
     );
     expect(guideCall).toBeDefined();
 
-    // Should NOT create .trellis/ (early return)
-    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
+    // The pre-existing legacy marker must stay empty on early return.
+    expect(fs.readdirSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toEqual([]);
   });
 
   it("#20 -y --registry aborts on probe failure instead of direct download fallback", async () => {
@@ -1230,7 +1230,7 @@ describe("init() integration", () => {
       .join("\n");
 
     expect(logOutput).toContain("Error: Could not reach registry index");
-    expect(fs.existsSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toBe(false);
+    expect(fs.readdirSync(path.join(tmpDir, DIR_NAMES.WORKFLOW))).toEqual([]);
   });
 
   it("#21 -y --registry records direct spec registry source and tracks downloaded spec files", async () => {

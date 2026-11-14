@@ -5,6 +5,15 @@ import chalk from "chalk";
 import inquirer from "inquirer";
 
 import { DIR_NAMES, FILE_NAMES, PATHS } from "../constants/paths.js";
+import {
+  resolveWorkflowDir,
+  runtimeDirOf,
+  isExternalMode,
+  renderWorkflowPaths,
+} from "../utils/external-store.js";
+import { runStorageMigration, isLegacyLayout } from "./storage-migration.js";
+import { crossesStorageMigration } from "../migrations/index.js";
+import { writeFileAtomic } from "../utils/atomic-write.js";
 import type { AITool } from "../types/ai-tools.js";
 import { VERSION, PACKAGE_NAME } from "../constants/version.js";
 import {
@@ -91,6 +100,14 @@ export interface UpdateOptions {
   createNew?: boolean;
   allowDowngrade?: boolean;
   migrate?: boolean;
+  /** Run the explicit storage migration (legacy `.trellis` → external store). */
+  migrateStorage?: boolean;
+  /** Storage root override for --migrate-storage (default ~/.trellis-wiki). */
+  storage?: string;
+  /** External project name for --migrate-storage (default: cwd basename). */
+  project?: string;
+  /** Primary legacy workspace dir for --migrate-storage (multi-dev ambiguity). */
+  workspace?: string;
 }
 
 interface FileChange {
@@ -213,6 +230,26 @@ function mergeManagedBlockContent(
   return `${trimmed}\n\n${templateBlock}\n`;
 }
 
+/**
+ * Resolve a manifest/migration key to its on-disk path.
+ *
+ * External storage mode: `.trellis/...` keys live under the workflow root
+ * (the external project dir), not the code checkout. Non-workflow keys
+ * (platform wiring like `.codex/...`, `AGENTS.md`) stay relative to cwd.
+ */
+function resolveManagedPath(cwd: string, relativePath: string): string {
+  if (
+    relativePath === DIR_NAMES.WORKFLOW ||
+    relativePath.startsWith(`${DIR_NAMES.WORKFLOW}/`)
+  ) {
+    return path.join(
+      resolveWorkflowDir(cwd),
+      relativePath.slice(DIR_NAMES.WORKFLOW.length + 1),
+    );
+  }
+  return path.join(cwd, ...relativePath.split("/"));
+}
+
 function buildManagedBlockTemplate(
   cwd: string,
   relativePath: string,
@@ -220,7 +257,7 @@ function buildManagedBlockTemplate(
   startMarker: string,
   endMarker: string,
 ): string {
-  const fullPath = path.join(cwd, ...relativePath.split("/"));
+  const fullPath = resolveManagedPath(cwd, relativePath);
   if (!fs.existsSync(fullPath)) {
     return templateContent;
   }
@@ -351,7 +388,7 @@ function collectSafeFileDeletes(
   const results: SafeFileDeleteClassified[] = [];
 
   for (const item of safeDeletes) {
-    const fullPath = path.join(cwd, item.from);
+    const fullPath = resolveManagedPath(cwd, item.from);
 
     // Check: file exists?
     if (!fs.existsSync(fullPath)) {
@@ -457,7 +494,7 @@ function executeSafeFileDeletes(
   let deleted = 0;
 
   for (const c of toDelete) {
-    const fullPath = path.join(cwd, c.item.from);
+    const fullPath = resolveManagedPath(cwd, c.item.from);
     try {
       fs.unlinkSync(fullPath);
       removeHash(cwd, c.item.from);
@@ -483,7 +520,10 @@ function executeSafeFileDeletes(
  * @internal Exported for testing only
  */
 export function loadUpdateSkipPaths(cwd: string): string[] {
-  const configPath = path.join(cwd, DIR_NAMES.WORKFLOW, "config.yaml");
+  const configPath = resolveManagedPath(
+    cwd,
+    `${DIR_NAMES.WORKFLOW}/config.yaml`,
+  );
   if (!fs.existsSync(configPath)) return [];
 
   try {
@@ -614,7 +654,7 @@ export function applyConfigSectionsAdded(
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
 
-    const targetPath = path.join(cwd, entry.file);
+    const targetPath = resolveManagedPath(cwd, entry.file);
     if (!fs.existsSync(targetPath)) continue;
 
     let userContent: string;
@@ -945,8 +985,15 @@ async function collectTemplateFiles(
   }
 
   // Apply python3→python replacement for Windows consistency with init-time writes
+  const externalRoot = isExternalMode(cwd) ? resolveWorkflowDir(cwd) : null;
   for (const [filePath, content] of files) {
-    files.set(filePath, replacePythonCommandLiterals(content));
+    const rendered = replacePythonCommandLiterals(content);
+    files.set(
+      filePath,
+      filePath.endsWith(".md") && externalRoot
+        ? renderWorkflowPaths(rendered, externalRoot)
+        : rendered,
+    );
   }
 
   return files;
@@ -975,7 +1022,7 @@ function analyzeChanges(
   };
 
   for (const [relativePath, newContent] of templates) {
-    const fullPath = path.join(cwd, relativePath);
+    const fullPath = resolveManagedPath(cwd, relativePath);
     const exists = fs.existsSync(fullPath);
 
     const change: FileChange = {
@@ -1224,7 +1271,10 @@ async function promptConflictResolution(
  */
 function createBackupDirPath(cwd: string): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  return path.join(cwd, DIR_NAMES.WORKFLOW, `.backup-${timestamp}`);
+  const parent = isExternalMode(cwd)
+    ? path.join(runtimeDirOf(cwd), "backups")
+    : path.join(cwd, DIR_NAMES.WORKFLOW);
+  return path.join(parent, `.backup-${timestamp}`);
 }
 
 /**
@@ -1235,7 +1285,7 @@ function backupFile(
   backupDir: string,
   relativePath: string,
 ): void {
-  const srcPath = path.join(cwd, relativePath);
+  const srcPath = resolveManagedPath(cwd, relativePath);
   if (!fs.existsSync(srcPath)) return;
 
   const backupPath = path.join(backupDir, relativePath);
@@ -1262,6 +1312,8 @@ const BACKUP_EXCLUDE_PATTERNS = [
   "/spec/", // Spec files (user-customized content)
   "/backlog/", // Backlog data (user data)
   "/agent-traces/", // Agent traces (user data, legacy name)
+  "/.runtime/", // Session/checkout state and the external backup destination
+  "/__pycache__/", // Python bytecode cache
   // Platform-native worktree dirs — these are full sub-repos the CLI
   // spawns for parallel sessions. Backing them up on every update would
   // snapshot the entire nested working tree. Confirmed conventions:
@@ -1304,12 +1356,12 @@ function createFullBackup(cwd: string): string | null {
   let hasFiles = false;
 
   for (const dir of BACKUP_DIRS) {
-    const dirPath = path.join(cwd, dir);
+    const dirPath = resolveManagedPath(cwd, dir);
     if (!fs.existsSync(dirPath)) continue;
 
     const files = collectAllFiles(dirPath, cwd);
     for (const fullPath of files) {
-      const relativePath = path.relative(cwd, fullPath);
+      const relativePath = path.join(dir, path.relative(dirPath, fullPath));
 
       // Skip excluded paths
       if (shouldExcludeFromBackup(relativePath)) continue;
@@ -1342,15 +1394,24 @@ function createFullBackup(cwd: string): string | null {
  * Update version file
  */
 function updateVersionFile(cwd: string): void {
-  const versionPath = path.join(cwd, DIR_NAMES.WORKFLOW, ".version");
-  fs.writeFileSync(versionPath, VERSION);
+  const versionPath = resolveManagedPath(cwd, `${DIR_NAMES.WORKFLOW}/.version`);
+  writeFileAtomic(versionPath, VERSION);
+  if (isExternalMode(cwd)) {
+    const runtime = runtimeDirOf(cwd);
+    fs.mkdirSync(runtime, { recursive: true });
+    writeFileAtomic(path.join(runtime, ".version"), VERSION);
+  }
 }
 
 /**
  * Get current installed version
  */
 function getInstalledVersion(cwd: string): string {
-  const versionPath = path.join(cwd, DIR_NAMES.WORKFLOW, ".version");
+  const checkoutVersion = path.join(runtimeDirOf(cwd), ".version");
+  const versionPath =
+    isExternalMode(cwd) && fs.existsSync(checkoutVersion)
+      ? checkoutVersion
+      : path.join(resolveWorkflowDir(cwd), ".version");
   if (fs.existsSync(versionPath)) {
     return fs.readFileSync(versionPath, "utf-8").trim();
   }
@@ -2086,8 +2147,23 @@ export function renameTracesToJournal(workspaceDir: string): {
 export async function update(options: UpdateOptions): Promise<void> {
   const cwd = process.cwd();
 
+  // Explicit storage migration is its own transaction, not a template
+  // update: it must run before (and independently of) any template work.
+  if (options.migrateStorage) {
+    await runStorageMigration(cwd, options, () =>
+      update({
+        ...options,
+        migrateStorage: false,
+        migrate: true,
+        // Preserve modified templates by default during non-interactive migration.
+        skipAll: options.force !== true && options.createNew !== true,
+      }),
+    );
+    return;
+  }
+
   // Check if Trellis is initialized
-  if (!fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW))) {
+  if (!fs.existsSync(resolveWorkflowDir(cwd))) {
     console.log(chalk.red("Error: Trellis not initialized in this directory."));
     console.log(chalk.gray("Run 'trellis init' first."));
     return;
@@ -2157,6 +2233,39 @@ export async function update(options: UpdateOptions): Promise<void> {
 
   // Migration metadata is displayed at the end to prevent scrolling off screen
 
+  // Storage-migration gate: crossing a release that moves workflow data
+  // to the external store hard-fails a legacy-layout update that is not
+  // the explicit migration itself. A plain template update on a legacy
+  // tree would re-render old-path integrations and leave the project
+  // half-migrated (design §8.6).
+  if (
+    isLegacyLayout(cwd) &&
+    !options.migrateStorage &&
+    !options.dryRun &&
+    cliVsProject > 0 &&
+    projectVersion !== "unknown" &&
+    crossesStorageMigration(projectVersion, cliVersion)
+  ) {
+    console.log(
+      chalk.bgRed.white.bold(" ✖ STORAGE MIGRATION REQUIRED ") +
+        chalk.red(
+          ` ${projectVersion} → ${cliVersion} moves Trellis data to the external store.`,
+        ),
+    );
+    console.log("");
+    console.log(chalk.yellow("  Run: trellis update --migrate-storage"));
+    console.log("");
+    console.log(
+      chalk.gray(
+        "  The migration copies your data to the external store, verifies it, then\n" +
+          "  switches the root config and browse link. The original .trellis tree is\n" +
+          "  preserved at .trellis.pre-migration.<timestamp>/. Use --dry-run to preview.\n" +
+          "  Already on external storage? This gate does not apply.",
+      ),
+    );
+    process.exit(1);
+  }
+
   // Load template hashes for modification detection
   let hashes = loadHashes(cwd);
   const zcodeConfigured = getConfiguredPlatforms(cwd).has("zcode");
@@ -2202,6 +2311,7 @@ export async function update(options: UpdateOptions): Promise<void> {
       cwd,
       [...configuredPlatforms],
       hashes,
+      { persist: !options.dryRun },
     );
     if (prune.pruned.length > 0) {
       console.log(
@@ -2438,7 +2548,7 @@ export async function update(options: UpdateOptions): Promise<void> {
       console.log(chalk.green("✓ Already up to date!"));
     } else {
       // Version changed but no file changes needed — still update the version stamp
-      updateVersionFile(cwd);
+      if (!options.dryRun) updateVersionFile(cwd);
       if (isUpgrade) {
         console.log(
           chalk.green(
@@ -2774,7 +2884,7 @@ export async function update(options: UpdateOptions): Promise<void> {
       const monthDay = `${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
       const taskSlug = `migrate-to-${cliVersion}`;
       const taskDirName = `${monthDay}-${taskSlug}`;
-      const tasksDir = path.join(cwd, DIR_NAMES.WORKFLOW, DIR_NAMES.TASKS);
+      const tasksDir = path.join(resolveWorkflowDir(cwd), DIR_NAMES.TASKS);
       const taskDir = path.join(tasksDir, taskDirName);
 
       // Check if task already exists
@@ -2790,8 +2900,10 @@ export async function update(options: UpdateOptions): Promise<void> {
         // the assignee field, producing bogus assignees like
         // "name=suyuan\ninitialized_at=2026-04-07T23:41:21.978312" that
         // later break session-start task rendering.
-        const developerFile = path.join(cwd, DIR_NAMES.WORKFLOW, ".developer");
-        let currentDeveloper = "unknown";
+        const developerFile = path.join(resolveWorkflowDir(cwd), ".developer");
+        let currentDeveloper = isExternalMode(cwd)
+          ? os.userInfo().username
+          : "unknown";
         if (fs.existsSync(developerFile)) {
           const raw = fs.readFileSync(developerFile, "utf-8");
           const nameMatch = raw.match(/^\s*name\s*=\s*(.+?)\s*$/m);

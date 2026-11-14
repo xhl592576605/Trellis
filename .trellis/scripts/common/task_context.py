@@ -29,7 +29,8 @@ from .config import get_context_injection_limits
 from .git import branch_exists_locally
 from .io import read_json
 from .log import Colors, colored
-from .paths import DIR_ARCHIVE, DIR_TASKS, DIR_WORKFLOW, FILE_TASK_JSON, get_repo_root
+from .paths import (DIR_ARCHIVE, DIR_TASKS, DIR_WORKFLOW, FILE_TASK_JSON,
+                    get_repo_root, resolve_project_path, workflow_dir)
 from .task_utils import resolve_task_dir
 
 # Extensions that look like code rather than spec/research docs. Entries with
@@ -89,7 +90,10 @@ def cmd_add_context(args: argparse.Namespace) -> int:
         jsonl_name = f"{jsonl_name}.jsonl"
 
     jsonl_file = target_dir / jsonl_name
-    full_path = repo_root / path
+    full_path = resolve_project_path(path, repo_root)
+    if full_path is None:
+        print(colored(f"Error: Path escapes project roots: {path}", Colors.RED))
+        return 1
 
     entry_type = "file"
     if full_path.is_dir():
@@ -222,20 +226,20 @@ def _resolve_context_entry_path(
     Exact historical self-references are remapped only for archived tasks.
     ``None`` means the remapped path traversed or resolved outside that archive.
     """
-    repo_path = repo_root / file_path
+    repo_path = resolve_project_path(file_path, repo_root)
     if task_dir is None:
         return repo_path
 
     try:
-        task_parts = task_dir.resolve().relative_to(repo_root.resolve()).parts
+        task_parts = task_dir.resolve().relative_to(workflow_dir(repo_root).resolve()).parts
     except ValueError:
         return repo_path
 
-    archive_prefix = (DIR_WORKFLOW, DIR_TASKS, DIR_ARCHIVE)
-    if len(task_parts) != 5 or task_parts[:3] != archive_prefix:
+    archive_prefix = (DIR_TASKS, DIR_ARCHIVE)
+    if len(task_parts) != 4 or task_parts[:2] != archive_prefix:
         return repo_path
 
-    year_month = task_parts[3]
+    year_month = task_parts[2]
     if (
         len(year_month) != 7
         or year_month[4] != "-"
@@ -291,7 +295,7 @@ def _validate_jsonl(jsonl_file: Path, repo_root: Path, task_dir: Path | None = N
     task_rel = ""
     if task_dir is not None:
         try:
-            task_rel = task_dir.resolve().relative_to(repo_root.resolve()).as_posix()
+            task_rel = DIR_WORKFLOW + "/" + task_dir.resolve().relative_to(workflow_dir(repo_root).resolve()).as_posix()
         except ValueError:
             task_rel = ""
 

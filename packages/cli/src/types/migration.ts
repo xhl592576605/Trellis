@@ -79,6 +79,14 @@ export interface MigrationManifest {
    * customizations intact while still surfacing newly-introduced knobs.
    */
   configSectionsAdded?: ConfigSectionAdded[];
+  /**
+   * True when this release moves workflow data to the external local store
+   * and legacy in-repo `.trellis` layouts must run the explicit storage
+   * migration (`trellis update --migrate-storage`) instead of a plain
+   * template update. Storage migration is a dedicated transaction, never a
+   * manifest file-migration item (design §8).
+   */
+  requiresStorageMigration?: boolean;
 }
 
 /**

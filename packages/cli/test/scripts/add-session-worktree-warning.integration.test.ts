@@ -45,6 +45,7 @@ function setupRepo(tmp: string, autoCommit: boolean): void {
   fs.mkdirSync(tmp, { recursive: true });
   git(tmp, "init", "-q", "-b", "main");
   git(tmp, "config", "user.email", "test@example.com");
+  git(tmp, "config", "core.excludesFile", "/dev/null");
   git(tmp, "config", "user.name", "Test");
 
   const scriptsDest = path.join(tmp, ".trellis", "scripts");

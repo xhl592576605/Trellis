@@ -403,3 +403,30 @@ What you should test when extending update:
 | Block-merge change to `workflow.md` / `AGENTS.md` | At least one test asserting both "user prose preserved" and "managed block updated" |
 
 When a test reaches into `getAllMigrations()` or `getMigrationsForVersion`, it's exercising the boundary with `migrations/index.ts` — keep those assertions narrow (e.g., "this manifest's safe-file-delete fires") so they don't break every time the manifest list grows.
+
+
+## External storage migration
+
+`update --migrate-storage` explicitly imports a legacy tree; options include
+`--storage <dir>`, `--project <name>`, `--workspace <developer>` and `--dry-run`.
+The storage-release gate runs before mutations, including for manifests with
+no rename/delete entries. It is independent of ordinary `--migrate`.
+Migration verifies an import image, records checkout-scoped checkpoints, commits
+with the user's Git identity/hooks, preserves the source as a named backup,
+and refreshes current-checkout integration in the same invocation.
+See [Filesystem Safety: external transactions](./filesystem-safety.md#external-transactions-commits-migration-and-removal-phases-57)
+for lock ordering, recovery phases, attribution and required regression tests.
+
+In locator mode, update snapshots belong to the current checkout under
+`<project>/.runtime/checkouts/<checkoutKey>/backups/.backup-<timestamp>/`.
+Resolve shared backup sources through the locator and retain their logical
+`.trellis/*` keys inside the snapshot. Exclude runtime and Python caches as
+well as the existing product-data exclusions, so backup creation cannot recurse
+into itself. Missing or wrong browse links never redirect a backup or cause an
+physical `.trellis` directory to be created in the checkout. Generated breaking
+migration tasks also use the resolved external tasks directory.
+
+Regression: `external-workflow.integration.test.ts` updates an edited Codex
+worktree with no browse link, checks the saved platform bytes/shared workflow
+and absence of runtime snapshots, then uninstalls it while preserving the main
+worktree's edited Pi installation.

@@ -36,6 +36,9 @@ export const scriptsInit = readTemplate("scripts/__init__.py");
 // Python scripts - common
 export const commonInit = readTemplate("scripts/common/__init__.py");
 export const commonPaths = readTemplate("scripts/common/paths.py");
+export const commonExternalStore = readTemplate(
+  "scripts/common/external_store.py",
+);
 export const commonDeveloper = readTemplate("scripts/common/developer.py");
 export const commonGitContext = readTemplate("scripts/common/git_context.py");
 export const commonTaskQueue = readTemplate("scripts/common/task_queue.py");
@@ -63,6 +66,7 @@ export const commonTrellisConfig = readTemplate(
   "scripts/common/trellis_config.py",
 );
 export const commonSafeCommit = readTemplate("scripts/common/safe_commit.py");
+export const commonDataGit = readTemplate("scripts/common/data_git.py");
 
 // Python scripts - main
 export const getDeveloperScript = readTemplate("scripts/get_developer.py");
@@ -96,6 +100,7 @@ export function getAllScripts(): Map<string, string> {
   // Common
   scripts.set("common/__init__.py", commonInit);
   scripts.set("common/paths.py", commonPaths);
+  scripts.set("common/external_store.py", commonExternalStore);
   scripts.set("common/developer.py", commonDeveloper);
   scripts.set("common/git_context.py", commonGitContext);
   scripts.set("common/task_queue.py", commonTaskQueue);
@@ -115,6 +120,7 @@ export function getAllScripts(): Map<string, string> {
   scripts.set("common/workflow_phase.py", commonWorkflowPhase);
   scripts.set("common/trellis_config.py", commonTrellisConfig);
   scripts.set("common/safe_commit.py", commonSafeCommit);
+  scripts.set("common/data_git.py", commonDataGit);
 
   // Main
   scripts.set("get_developer.py", getDeveloperScript);

@@ -50,6 +50,7 @@ function setupRepo(tmp: string): void {
   fs.mkdirSync(tmp, { recursive: true });
   git(tmp, "init", "-q", "-b", "main");
   git(tmp, "config", "user.email", "test@example.com");
+  git(tmp, "config", "core.excludesFile", "/dev/null");
   git(tmp, "config", "user.name", "Test");
   stampTrellis(tmp);
 }
@@ -692,8 +693,36 @@ describe.skipIf(!hasPython())("add_session.py fingerprint date rollover", () => 
       "a genuinely different session",
       "--branch",
       BRANCH,
+      "--idempotency-key",
+      "other-record",
     ]);
-    expect(other.status).toBe(0);
+    // Stage-5 mixed shared-file contract: record 1 is still pending, so
+    // bundling it into this commit is refused. Both records stay on disk,
+    // uncommitted; the exit code makes the unfinished state visible.
+    expect(other.status).toBe(1);
+    expect(other.stderr).toMatch(/another session/i);
+    expect(sessionNumbers(tmp)).toEqual([1, 2]);
+    expect(countMarkers(tmp)).toBe(2);
+
+    // Resolving by hand (committing the journal) finishes both records; a
+    // re-run resumes instead of appending a third entry.
+    const ws = path.join(tmp, ".trellis", "workspace", DEVELOPER);
+    spawnSync("git", ["add", "-A", "--", ws], { cwd: tmp, encoding: "utf-8" });
+    spawnSync(
+      "git",
+      ["commit", "-q", "-m", "manual resolve"],
+      { cwd: tmp, encoding: "utf-8" },
+    );
+    const retry = tryAddSession(tmp, TITLE, [
+      "--summary",
+      "a genuinely different session",
+      "--branch",
+      BRANCH,
+      "--idempotency-key",
+      "other-record",
+    ]);
+    expect(retry.status, retry.stderr).toBe(0);
+    expect(retry.stderr).toMatch(/already recorded and committed/i);
     expect(sessionNumbers(tmp)).toEqual([1, 2]);
     expect(countMarkers(tmp)).toBe(2);
   });
@@ -998,6 +1027,7 @@ describe.skipIf(!hasPython())("add_session.py with .trellis below the git root",
     outer = fs.mkdtempSync(path.join(os.tmpdir(), "trellis-session-nested-"));
     git(outer, "init", "-q", "-b", "main");
     git(outer, "config", "user.email", "test@example.com");
+    git(outer, "config", "core.excludesFile", "/dev/null");
     git(outer, "config", "user.name", "Test");
     project = path.join(outer, "project");
     stampTrellis(project);

@@ -35,14 +35,23 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from .git import run_git, run_git_retry_index_lock
+from .git import (
+    INDEX_LOCK_RETRY_ATTEMPTS,
+    index_lock_path,
+    run_git,
+    run_git_retry_index_lock,
+    stderr_indicates_index_lock,
+)
+from .data_git import DataGitContext, data_git_context, storage_commit_lock
 from .paths import (
     DIR_ARCHIVE,
     DIR_TASKS,
     DIR_WORKFLOW,
     DIR_WORKSPACE,
     FILE_JOURNAL_PREFIX,
-    get_developer,
+    get_workspace_dir,
+    workflow_dir,
+    workspace_display_dir,
 )
 
 
@@ -91,23 +100,19 @@ def safe_trellis_paths_to_add(
     """
     paths: list[str] = []
 
-    # Workspace journal files + index.md
-    developer = get_developer(repo_root)
-    if developer:
-        ws = repo_root / DIR_WORKFLOW / DIR_WORKSPACE / developer
-        if ws.is_dir():
-            for f in sorted(ws.glob(f"{FILE_JOURNAL_PREFIX}*.md")):
-                if f.is_file():
-                    paths.append(
-                        f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/{f.name}"
-                    )
-            index_md = ws / "index.md"
-            if index_md.is_file():
-                paths.append(
-                    f"{DIR_WORKFLOW}/{DIR_WORKSPACE}/{developer}/index.md"
-                )
+    # Workspace journal files + index.md. Flat in external single-user mode,
+    # developer-scoped in the legacy layout.
+    ws = get_workspace_dir(repo_root)
+    display = workspace_display_dir(repo_root)
+    if ws is not None and display and ws.is_dir():
+        for f in sorted(ws.glob(f"{FILE_JOURNAL_PREFIX}*.md")):
+            if f.is_file():
+                paths.append(f"{display}/{f.name}")
+        index_md = ws / "index.md"
+        if index_md.is_file():
+            paths.append(f"{display}/index.md")
 
-    tasks_dir = repo_root / DIR_WORKFLOW / DIR_TASKS
+    tasks_dir = workflow_dir(repo_root) / DIR_TASKS
     if not tasks_dir.is_dir():
         return paths
 
@@ -150,12 +155,13 @@ def safe_archive_paths_to_add(
 
     Scoped to ONLY the paths the archive operation actually touched:
 
-      - the archive subtree (where the freshly-moved task lives)
+      - ONLY the archived task's own destination directory
+        (.trellis/tasks/archive/<YYYY-MM>/<task>)
       - the source task directory (for source-side deletes; caller pairs
         this with `git rm --cached` since `git add` won't stage deletes
         for a path that no longer exists in the working tree)
-      - any child task directories whose `task.json` was edited to drop
-        the archived parent (parent-children relationship update)
+      - the task.json of child task directories edited to drop the
+        archived parent (parent-children relationship update)
 
     This narrow scope avoids "scope creep" — dirty changes in OTHER
     active task dirs (parallel-window edits) are NOT bundled into the
@@ -167,23 +173,35 @@ def safe_archive_paths_to_add(
     callers should always pass `task_name`.
     """
     paths: list[str] = []
-    tasks_dir = repo_root / DIR_WORKFLOW / DIR_TASKS
+    tasks_dir = workflow_dir(repo_root) / DIR_TASKS
     if not tasks_dir.is_dir():
         return paths
 
     archive_dir = tasks_dir / DIR_ARCHIVE
 
     if task_name is not None:
-        # Narrow scope — only paths that still exist on disk (so
-        # `git add` doesn't choke on the moved-away source). The caller
-        # handles the source-side deletes via `git rm --cached`
-        # explicitly.
+        # Narrow scope — only the archived task's own destination
+        # directory, never the whole archive subtree: other months hold
+        # other tasks' uncommitted changes that must not ride along in
+        # this commit (stage-5 / AC6). Source-side deletes are staged by
+        # the caller via `git rm --cached`; modified children contribute
+        # their task.json only — staging a whole child dir would bundle
+        # whatever else is dirty inside that sibling task's directory.
+        # Exact-name lookup per month dir, so a task name is never
+        # reinterpreted as a glob pattern.
         if archive_dir.is_dir():
-            paths.append(
-                f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}"
-            )
+            for month in sorted(archive_dir.iterdir()):
+                if not month.is_dir():
+                    continue
+                dest = month / task_name
+                if dest.is_dir():
+                    paths.append(
+                        f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}/{month.name}/{task_name}"
+                    )
         for child_name in modified_children or []:
-            paths.append(f"{DIR_WORKFLOW}/{DIR_TASKS}/{child_name}")
+            child_json = tasks_dir / child_name / "task.json"
+            if child_json.is_file():
+                paths.append(f"{DIR_WORKFLOW}/{DIR_TASKS}/{child_name}/task.json")
         return paths
 
     # Legacy wide scope (no task_name): preserve old behavior so callers
@@ -212,6 +230,11 @@ def safe_git_add(
 ) -> tuple[bool, bool, str]:
     """Run `git add` on specific paths; never retry with -f.
 
+    ``paths`` are logical ``.trellis/...`` paths; they are mapped through
+    the data-git context and staged in the repository that actually owns
+    Trellis product data — the storage root in external mode, the code
+    root in the legacy layout (design §7 two-repository split).
+
     Returns ``(success, used_force, stderr)``. The ``used_force`` field is
     kept for signature compatibility with the 0.5.10 implementation but is
     always ``False`` — we never auto-force.
@@ -232,11 +255,170 @@ def safe_git_add(
     if not paths:
         return True, False, ""
 
+    ctx = data_git_context(repo_root)
+    specs = [f":(literal){ctx.to_pathspec(p)}" for p in paths]
     runner = run_git_retry_index_lock if retry_on_index_lock else run_git
-    rc, _, err = runner(["add", "--", *paths], cwd=repo_root)
+    rc, _, err = runner(["add", "--", *specs], cwd=ctx.git_root)
     if rc == 0:
         return True, False, ""
     return False, False, err
+
+
+# Outcome constants for :func:`commit_task_archive` — one vocabulary shared
+# by `task.py archive` and the add_session recovery flush so their retry and
+# reporting semantics stay aligned.
+ARCHIVE_COMMIT_DONE = "done"
+ARCHIVE_COMMIT_SKIPPED = "skipped"  # nothing to commit for this task
+ARCHIVE_COMMIT_FAILED = "failed"  # git error; state must stay recoverable
+
+
+def _print_index_lock_hint(ctx: DataGitContext, task_name: str) -> None:
+    """Report an archive commit that gave up on a held index.lock.
+
+    The move itself already succeeded, so the state is consistent — the
+    task lives in archive/ and only its commit is outstanding. The caller
+    persists recovery state; this hint names the lock and the recovery
+    path so neither a user nor an agent reading the log re-archives the
+    task or invents a blanket `git add -f`.
+    """
+    lock = index_lock_path(ctx.git_root)
+    print(
+        f"[WARN] git gave up after {INDEX_LOCK_RETRY_ATTEMPTS} attempts: "
+        f"another process is holding {lock}",
+        file=sys.stderr,
+    )
+    print(
+        "[WARN] The task was moved into archive/ on disk; only the commit is pending.",
+        file=sys.stderr,
+    )
+    print(
+        "[WARN] Close whatever holds the lock (an IDE git integration, a status",
+        file=sys.stderr,
+    )
+    print(
+        f"[WARN] daemon, another session), or delete {lock} if it is stale. The",
+        file=sys.stderr,
+    )
+    print(
+        f"[WARN] next add_session.py run (finish-work: --require-commit) retries "
+        f"the 'chore(task): archive {task_name}' commit; do NOT re-archive the task.",
+        file=sys.stderr,
+    )
+
+
+def commit_task_archive(
+    repo_root: Path,
+    task_name: str,
+    modified_children: list[str] | None = None,
+    archive_ref: str | None = None,
+) -> tuple[str, str]:
+    """Stage + commit ONE task's archive move in the data repository.
+
+    Enclosed by the storage commit lock (external mode shares one index and
+    HEAD across projects; the stage→commit window must not interleave).
+    The commit uses an explicit pathspec so unrelated staged work — another
+    project's, or this project's — is never swept in (#579) and stays
+    staged afterwards.
+
+    Returns ``(outcome, stderr)`` with outcome one of
+    ``ARCHIVE_COMMIT_DONE`` / ``ARCHIVE_COMMIT_SKIPPED`` /
+    ``ARCHIVE_COMMIT_FAILED``. Callers persist recovery state on anything
+    that is not DONE/SKIPPED (see :mod:`common.data_git`).
+    """
+    ctx = data_git_context(repo_root)
+    source_rel = f"{DIR_WORKFLOW}/{DIR_TASKS}/{task_name}"
+    source_spec = f":(literal){ctx.to_pathspec(source_rel)}"
+
+    rc, tracked_out, _ = run_git(
+        ["ls-files", "--", source_spec],
+        cwd=ctx.git_root,
+    )
+    source_was_tracked = rc == 0 and bool(tracked_out.strip())
+    if not source_was_tracked:
+        # A failed previous attempt may already have staged source deletes.
+        # ls-files sees only the index; HEAD still owns those deletions and
+        # they must remain in the retry's explicit commit pathspec.
+        rc, head_source, _ = run_git(
+            ["ls-tree", "-r", "--name-only", "HEAD", "--", source_spec],
+            cwd=ctx.git_root,
+        )
+        source_was_tracked = rc == 0 and bool(head_source.strip())
+
+    paths = safe_archive_paths_to_add(
+        repo_root, task_name=task_name, modified_children=modified_children
+    )
+    archive_prefix = f"{DIR_WORKFLOW}/{DIR_TASKS}/{DIR_ARCHIVE}/"
+    if archive_ref is not None:
+        parts = archive_ref.split("/")
+        if (len(parts) != 5 or not archive_ref.startswith(archive_prefix)
+                or parts[-1] != task_name or any(p in ("", ".", "..") for p in parts)):
+            return ARCHIVE_COMMIT_FAILED, "invalid exact archive destination"
+        dest = workflow_dir(repo_root).joinpath(*parts[1:])
+        try:
+            dest.resolve().relative_to((workflow_dir(repo_root) / DIR_TASKS).resolve())
+        except (OSError, ValueError):
+            return ARCHIVE_COMMIT_FAILED, "archive destination escapes this project"
+        if not dest.is_dir():
+            return ARCHIVE_COMMIT_FAILED, "archive destination is missing"
+        paths = [p for p in paths if not p.startswith(archive_prefix) or p == archive_ref]
+    else:
+        destinations = [p for p in paths if p.startswith(archive_prefix)]
+        if len(destinations) > 1:
+            return ARCHIVE_COMMIT_FAILED, "multiple archive destinations require an exact recovery reference"
+    specs = [f":(literal){ctx.to_pathspec(p)}" for p in paths]
+
+    with storage_commit_lock(ctx):
+        if specs:
+            success, _, err = safe_git_add(paths, repo_root, retry_on_index_lock=True)
+            if not success:
+                if err and "ignored by" in err.lower():
+                    print_gitignore_warning(paths)
+                elif stderr_indicates_index_lock(err):
+                    _print_index_lock_hint(ctx, task_name)
+                else:
+                    print(
+                        f"[WARN] git add failed: {err.strip() if err else 'unknown error'}",
+                        file=sys.stderr,
+                    )
+                return ARCHIVE_COMMIT_FAILED, err
+
+        # Belt-and-suspenders for the phantom-delete bug: `git add` stages
+        # additions/modifications only, so the moved-away source tree needs
+        # an explicit `git rm --cached` for its deletions to land in this
+        # commit. `--ignore-unmatch` keeps it a no-op for never-tracked
+        # tasks.
+        rc, _, err = run_git_retry_index_lock(
+            ["rm", "-r", "--cached", "--ignore-unmatch", "--", source_spec],
+            cwd=ctx.git_root,
+        )
+        if rc != 0:
+            if stderr_indicates_index_lock(err):
+                _print_index_lock_hint(ctx, task_name)
+            return ARCHIVE_COMMIT_FAILED, err
+
+        # A pathspec may only appear in `git commit -- <pathspec>` while git
+        # still knows that path; a never-tracked task has no source-side
+        # deletions staged either.
+        commit_specs = [*specs, source_spec] if source_was_tracked else list(specs)
+        if not commit_specs:
+            return ARCHIVE_COMMIT_SKIPPED, ""
+        rc, _, _ = run_git(
+            ["diff", "--cached", "--quiet", "--", *commit_specs],
+            cwd=ctx.git_root,
+        )
+        if rc == 0:
+            return ARCHIVE_COMMIT_SKIPPED, ""
+
+        commit_msg = f"chore(task): archive {task_name}"
+        rc, _, err = run_git_retry_index_lock(
+            ["commit", "-m", commit_msg, "--", *commit_specs], cwd=ctx.git_root
+        )
+        if rc == 0:
+            print(f"[OK] Auto-committed: {commit_msg}", file=sys.stderr)
+            return ARCHIVE_COMMIT_DONE, ""
+        if stderr_indicates_index_lock(err):
+            _print_index_lock_hint(ctx, task_name)
+        return ARCHIVE_COMMIT_FAILED, err
 
 
 def print_gitignore_warning(paths: list[str]) -> None:

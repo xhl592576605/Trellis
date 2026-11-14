@@ -1,22 +1,27 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { findCodeRoot as findStoreRoot, workflowDirOf as resolveStoreWorkflowDir, runtimeDirOf, renderWorkflowPaths } from "./external-store.js";
 import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, statSync, readSync } from "node:fs";
 import { join, dirname, basename, isAbsolute, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Project root detection
 // ---------------------------------------------------------------------------
 
+// Root-config filename (the double-l is the user's explicit spelling).
+const CONF_FILENAME = ".treills.conf.json";
+
 function findProjectRoot(startDir: string): string | null {
-   let current = startDir;
-   while (true) {
-      if (existsSync(join(current, ".trellis"))) return current;
-      const parent = dirname(current);
-      if (parent === current) break;
-      current = parent;
-   }
-   return null;
+  return findStoreRoot(startDir);
+}
+
+// Workflow data dir for a code root: the external project dir when a root
+// config is present, else the legacy `<root>/.trellis`. Never resolved
+// through the in-project browse link.
+function workflowDir(projectRoot: string): string {
+  return resolveStoreWorkflowDir(projectRoot);
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +129,7 @@ function parseChannelTrustSection(content: string): { trustedDirs: string[]; aut
 }
 
 function resolveTrustedRoots(projectRoot: string): string[] {
-   const configPath = join(projectRoot, ".trellis", "config.yaml");
+   const configPath = join(workflowDir(projectRoot), "config.yaml");
    let config: { trustedDirs: string[]; autoTrustSymlinks?: boolean } = { trustedDirs: [] };
    if (existsSync(configPath)) {
       try {
@@ -135,6 +140,15 @@ function resolveTrustedRoots(projectRoot: string): string[] {
    }
 
    const roots: string[] = [];
+   // External storage mode: the bound workflow dir is a trusted root by
+   // definition (the config is the verified binding); no symlink needed.
+   if (existsSync(join(projectRoot, CONF_FILENAME))) {
+      try {
+         roots.push(realpathSync(workflowDir(projectRoot)));
+      } catch {
+         // Unresolvable workflow dir — config validation reports elsewhere.
+      }
+   }
    for (const entry of config.trustedDirs) {
       try {
          roots.push(realpathSync(resolve(projectRoot, entry)));
@@ -145,7 +159,7 @@ function resolveTrustedRoots(projectRoot: string): string[] {
 
    if (config.autoTrustSymlinks !== false) {
       for (const entryName of AUTO_TRUST_ENTRIES) {
-         const entryPath = join(projectRoot, ".trellis", entryName);
+         const entryPath = join(workflowDir(projectRoot), entryName);
          try {
             if (lstatSync(entryPath).isSymbolicLink()) {
                roots.push(realpathSync(entryPath));
@@ -203,7 +217,7 @@ function resolveActiveTaskStatus(
    projectRoot: string,
    contextKey: string | null,
 ): { status: string; taskDir: string | null; taskTitle: string | null } {
-   const sessionsDir = join(projectRoot, ".trellis", ".runtime", "sessions");
+   const sessionsDir = join(runtimeDirOf(projectRoot), "sessions");
    if (!existsSync(sessionsDir)) return { status: "no_task", taskDir: null, taskTitle: null };
 
    // --- 通过 context key 解析 session 文件 ---
@@ -274,7 +288,7 @@ function resolveActiveTaskStatus(
 const SESSION_CONTEXT_TIMEOUT_MS = 5000;
 
 function buildSessionContext(projectRoot: string, contextKey: string | null): string {
-   const script = join(projectRoot, ".trellis", "scripts", "get_context.py");
+   const script = join(workflowDir(projectRoot), "scripts", "get_context.py");
    if (!existsSync(script)) return "";
 
    try {
@@ -302,7 +316,7 @@ function buildSessionContext(projectRoot: string, contextKey: string | null): st
 
 function taskContextInputPaths(projectRoot: string, taskDir: string): string[] {
    return [
-      join(projectRoot, ".trellis", "config.yaml"),
+      join(workflowDir(projectRoot), "config.yaml"),
       ...["prd.md", "design.md", "implement.md", "info.md"].map((name) => join(taskDir, name)),
    ];
 }
@@ -360,7 +374,7 @@ function unquoteYaml(value: string): string {
 function readContextInjectionLimits(projectRoot: string): ContextInjectionLimits {
    const limits = { ...DEFAULT_CONTEXT_INJECTION_LIMITS };
    let config = "";
-   try { config = readFileSync(join(projectRoot, ".trellis", "config.yaml"), "utf-8"); } catch { return limits; }
+   try { config = readFileSync(join(workflowDir(projectRoot), "config.yaml"), "utf-8"); } catch { return limits; }
 
    let inSection = false;
    let sectionIndent = -1;
@@ -635,7 +649,7 @@ function isYamlNonStringScalar(raw: string): boolean {
 
 function readPromptInjectionSkipKeyword(projectRoot: string): string {
    let config = "";
-   try { config = readFileSync(join(projectRoot, ".trellis", "config.yaml"), "utf-8"); } catch { return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD; }
+   try { config = readFileSync(join(workflowDir(projectRoot), "config.yaml"), "utf-8"); } catch { return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD; }
 
    let inSection = false;
    let sectionIndent = -1;
@@ -715,7 +729,7 @@ class TurnContextCache {
 
       const { status } = resolveActiveTaskStatus(projectRoot, contextKey);
 
-      const workflowPath = join(projectRoot, ".trellis", "workflow.md");
+      const workflowPath = join(workflowDir(projectRoot), "workflow.md");
       let workflowMd = "";
       try { workflowMd = readFileSync(workflowPath, "utf-8"); } catch { }
 
@@ -736,6 +750,9 @@ class TurnContextCache {
          ? ""
          : `<workflow-state>\n${workflowBody}\n</workflow-state>\n\n<session-overview>\n${SESSION_OVERVIEW_TEXT}\n</session-overview>`;
 
+      if (existsSync(join(projectRoot, CONF_FILENAME))) {
+         this.workflowMsg = renderWorkflowPaths(this.workflowMsg, workflowDir(projectRoot));
+      }
       this.key = cacheKey;
       this.timestamp = now;
       return { workflowMsg: this.workflowMsg };
