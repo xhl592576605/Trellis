@@ -141,8 +141,9 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Keep project Trellis files versioned even if globally ignored
-!/.trellis/
+# Trellis data is external; keep the local browse link and recovery copies out of Git
+/.trellis
+/.trellis.pre-migration.*/
 
 # Ralph Loop state file
 .trellis/.ralph-state.json

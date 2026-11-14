@@ -1,3 +1,5 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Workers And Agent Cards
 
 Use workers when a peer agent should execute independently and report back
@@ -11,7 +13,7 @@ and translates its output back into channel events.
 trellis channel create impl-task --by dispatcher --cwd /path/to/repo
 trellis channel spawn impl-task --provider codex --as codex-impl --timeout 30m
 
-echo "Implement the schema for table X per .trellis/.../prd.md" \
+echo "Implement the schema for table X per /Users/xuhuale/.trellis-wiki/Trellis/.../prd.md" \
   | trellis channel send impl-task --as dispatcher --to codex-impl --stdin
 
 trellis channel wait impl-task --as dispatcher --from codex-impl --kind done --timeout 30m
@@ -24,7 +26,7 @@ inbox-idle until a `send --to <worker>` (or a broadcast when
 
 Key `spawn` flags:
 
-- `--agent <name>` — load `.trellis/agents/<name>.md` (provider/model/as/system prompt defaults).
+- `--agent <name>` — load `/Users/xuhuale/.trellis-wiki/Trellis/agents/<name>.md` (provider/model/as/system prompt defaults).
 - `--provider <claude|codex>` — overrides the agent card; validated against the adapter registry.
 - `--as <name>` — channel worker handle; defaults to the agent name.
 - `--cwd <path>` — worker working directory (also the jail root for `--file`/`--jsonl`).
@@ -44,11 +46,11 @@ The success event `spawned` records `pid`, `provider`, `agent`, the injected
 
 ## Agent Cards
 
-`--agent <name>` resolves to `.trellis/agents/<name>.md`. The card name must
+`--agent <name>` resolves to `/Users/xuhuale/.trellis-wiki/Trellis/agents/<name>.md`. The card name must
 match `[A-Za-z0-9._-]+`. The default Trellis install ships two cards:
 
-- `.trellis/agents/check.md` — code-quality reviewer.
-- `.trellis/agents/implement.md` — coding worker for implementation runs.
+- `/Users/xuhuale/.trellis-wiki/Trellis/agents/check.md` — code-quality reviewer.
+- `/Users/xuhuale/.trellis-wiki/Trellis/agents/implement.md` — coding worker for implementation runs.
 
 ```yaml
 ---
@@ -66,8 +68,8 @@ below).
 Always inspect project cards before spawning a named agent:
 
 ```bash
-ls .trellis/agents
-sed -n '1,100p' .trellis/agents/check.md
+ls /Users/xuhuale/.trellis-wiki/Trellis/agents
+sed -n '1,100p' /Users/xuhuale/.trellis-wiki/Trellis/agents/check.md
 ```
 
 ## Context Injection
@@ -91,7 +93,7 @@ Limits enforced by the loader:
 Example spawning a check agent against a task directory:
 
 ```bash
-TASK=.trellis/tasks/05-13-example
+TASK=/Users/xuhuale/.trellis-wiki/Trellis/tasks/05-13-example
 trellis channel spawn cr-example --agent check --provider codex --as check-cx \
   --file "$TASK/prd.md" \
   --file "$TASK/design.md" \
@@ -205,7 +207,7 @@ Precedence (highest first):
 1. CLI flags: `--idle-timeout`, `--max-live-workers` on `spawn`.
 2. Environment variables: `TRELLIS_CHANNEL_WORKER_IDLE_TIMEOUT`,
    `TRELLIS_CHANNEL_MAX_LIVE_WORKERS`.
-3. `.trellis/config.yaml` under `channel.worker_guard`.
+3. `/Users/xuhuale/.trellis-wiki/Trellis/config.yaml` under `channel.worker_guard`.
 4. Built-in defaults (`5m`, `6`).
 
 Cleanup notices are written to stderr at spawn time so operators can see which

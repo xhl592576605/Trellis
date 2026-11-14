@@ -1,3 +1,5 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Spec Writing
 
 Trellis specs are coding guidance for future agents. They should explain how to work in this repository, not how a generic project might be organized.
@@ -64,7 +66,7 @@ Avoid passing raw `process.argv` or unvalidated config objects into shared helpe
 Before finishing:
 
 ```bash
-grep -R "To be filled\\|TODO: fill\\|placeholder" .trellis/spec
+grep -R "To be filled\\|TODO: fill\\|placeholder" /Users/xuhuale/.trellis-wiki/Trellis/spec
 ```
 
 Also check links, index files, and whether any spec still describes a template rather than this repository.

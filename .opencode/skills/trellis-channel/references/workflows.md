@@ -1,3 +1,5 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Workflows
 
 Use these patterns by intent. Prefer durable channels for multi-round work and
@@ -10,12 +12,12 @@ Use when the user says "和 codex/claude 讨论一下", "brainstorm", or "拉一
 
 ```bash
 trellis channel create brainstorm-storage-layer --by main \
-  --task .trellis/tasks/05-XX-storage-adapter
+  --task /Users/xuhuale/.trellis-wiki/Trellis/tasks/05-XX-storage-adapter
 
 trellis channel spawn brainstorm-storage-layer \
   --agent architect --provider codex \
-  --file .trellis/tasks/05-XX-storage-adapter/prd.md \
-  --file .trellis/tasks/05-XX-storage-adapter/design.md \
+  --file /Users/xuhuale/.trellis-wiki/Trellis/tasks/05-XX-storage-adapter/prd.md \
+  --file /Users/xuhuale/.trellis-wiki/Trellis/tasks/05-XX-storage-adapter/design.md \
   --as cx-arch --timeout 30m
 
 trellis channel send brainstorm-storage-layer \
@@ -51,7 +53,7 @@ needed.
 Use when the user asks to dispatch implementation or review work.
 
 ```bash
-TASK=.trellis/tasks/05-12-foo
+TASK=/Users/xuhuale/.trellis-wiki/Trellis/tasks/05-12-foo
 trellis channel create cr-foo --task "$TASK" --by main
 
 trellis channel spawn cr-foo \

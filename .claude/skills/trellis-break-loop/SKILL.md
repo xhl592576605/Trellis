@@ -3,6 +3,9 @@ name: trellis-break-loop
 description: "Deep bug analysis to break the fix-forget-repeat cycle. Analyzes root cause category, why fixes failed, prevention mechanisms, and captures knowledge into specs. Use after fixing a bug to prevent the same class of bugs."
 ---
 
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
+
 # Break the Loop - Deep Bug Analysis
 
 When debug is complete, use this for deep analysis to break the "fix bug -> forget -> repeat" cycle.
@@ -60,8 +63,8 @@ What broader problems does this bug reveal?
 
 Solidify insights into the system:
 
-- [ ] Update `.trellis/spec/guides/` thinking guides
-- [ ] Update relevant `.trellis/spec/` docs
+- [ ] Update `/Users/xuhuale/.trellis-wiki/Trellis/spec/guides/` thinking guides
+- [ ] Update relevant `/Users/xuhuale/.trellis-wiki/Trellis/spec/` docs
 - [ ] Create issue record (if applicable)
 - [ ] Create feature ticket for root fix
 - [ ] Update check guidelines if needed
@@ -181,7 +184,7 @@ Never express binary certainty when evidence is incomplete. Use "most likely", "
    - If it's a code reuse issue → update `code-reuse-thinking-guide.md`
    - If it's domain-specific → update `backend/*.md` or `frontend/*.md`
 
-2. **Sync templates** - After updating `.trellis/spec/`, sync to `src/templates/markdown/spec/`
+2. **Sync templates** - After updating `/Users/xuhuale/.trellis-wiki/Trellis/spec/`, sync to `src/templates/markdown/spec/`
 
 3. **Commit the spec updates** - This is the primary output, not just the analysis text
 

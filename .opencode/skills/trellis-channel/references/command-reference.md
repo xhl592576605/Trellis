@@ -1,3 +1,5 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Command Reference
 
 Authoritative current command reference for `trellis channel` subcommands,
@@ -213,7 +215,7 @@ Behavior:
 ```bash
 trellis channel spawn <name>
   [--scope project|global]
-  [--agent <agent-name>]                  # loads .trellis/agents/<name>.md
+  [--agent <agent-name>]                  # loads /Users/xuhuale/.trellis-wiki/Trellis/agents/<name>.md
   [--provider claude|codex]               # overrides agent file
   [--as <worker-name>]                    # default: agent name
   [--cwd <path>]
@@ -244,7 +246,7 @@ Behavior:
 - OOM-guard precedence: CLI flag → env var
   (`TRELLIS_CHANNEL_WORKER_IDLE_TIMEOUT`,
   `TRELLIS_CHANNEL_MAX_LIVE_WORKERS`) →
-  `.trellis/config.yaml#channel.worker_guard` → built-in defaults.
+  `'/Users/xuhuale/.trellis-wiki/Trellis/config.yaml#channel.worker_guard'` → built-in defaults.
 
 ### `run [name]`
 

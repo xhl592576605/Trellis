@@ -1,10 +1,12 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Local Workflow System
 
-`.trellis/workflow.md` is the Trellis workflow source of truth inside the user project. An AI does not need Trellis source code to understand how the current project should move tasks forward; this file is enough.
+`/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` is the Trellis workflow source of truth inside the user project. An AI does not need Trellis source code to understand how the current project should move tasks forward; this file is enough.
 
 ## File Responsibilities
 
-`.trellis/workflow.md` has three responsibilities:
+`/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` has three responsibilities:
 
 1. **Explain workflow phases**: Plan, Execute, Finish.
 2. **Define skill routing**: which skill or agent the AI should use when the user expresses a certain intent.
@@ -22,10 +24,7 @@ Each phase contains numbered steps, such as `1.3 Configure context`. These numbe
 
 ## Skill Routing
 
-`workflow.md` separates routing by platform capability:
-
-- Platforms with sub-agent support: dispatch `trellis-implement` by default for implementation and `trellis-check` for checking.
-- Platforms without sub-agent support: the main session reads skills such as `trellis-before-dev`, then executes directly.
+All platforms use the current agent for research, implementation, and checking. Before implementation, load `trellis-before-dev`; after implementation, load `trellis-check`. Task artifacts and applicable specs/research are read directly.
 
 When changing local AI behavior, update the routing descriptions in `workflow.md` first, then check whether the corresponding platform skill, command, or agent files need to stay in sync.
 
@@ -48,7 +47,7 @@ Hooks choose the right block based on current task status and inject it into the
 | `in_progress` | The task has entered implementation and checking. |
 | `completed` | The task is complete and waiting for wrap-up or archive. |
 
-If the user wants to change policies such as "whether to create a task when there is no task," "when task creation may be skipped," or "whether sub-agents are required," edit these state blocks and the routing table above them.
+If the user wants to change policies such as "whether to create a task when there is no task," "when task creation may be skipped," or "which checks to run," edit these state blocks and the routing table above them.
 
 ## Local Modification Patterns
 
@@ -62,7 +61,7 @@ Common changes:
 | Change the wrap-up flow | Update Phase 3 and `finish-work` related descriptions. Note the current split: Phase 3.4 = AI-driven code commits (batched, user-confirmed), Phase 3.5 = `/finish-work` (archive + record session). `/finish-work` refuses to run if the working tree is dirty. |
 | Change platform differences | Update routing descriptions grouped by platform. |
 
-After editing, make the AI reread `.trellis/workflow.md`; do not assume the flow from the old conversation is still valid.
+After editing, make the AI reread `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`; do not assume the flow from the old conversation is still valid.
 
 ## Relationship To Platform Files
 
