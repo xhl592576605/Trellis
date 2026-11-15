@@ -10,13 +10,16 @@ Trellis/
 │   ├── src/cli/                   # commander 入口（trellis-wiki/trellis/tl 三 bin 同源）
 │   ├── src/commands/              # init / update / upgrade / uninstall / ablate / mem / channel…
 │   │   └── channel/               # 多 agent 协作运行时（store、supervisor、adapters）
+│   ├── src/utils/storage-update.ts # 普通 update 与存储迁移共用的产品快照、精确提交及失败恢复
 │   ├── src/configurators/         # 各 AI 平台接入；collectTemplates 是文件清单唯一来源
 │   ├── src/templates/             # 分发模板（trellis 脚本、common skills、各平台目录）
 │   │   └── trellis/scripts/       # 随项目安装的 Python（与外部存储 scripts 保持孪生一致）
-│   ├── src/migrations/manifests/  # 版本迁移链（0.7.0 = 外部存储 breaking）
+│   ├── src/migrations/manifests/  # 版本迁移链（0.7.0 = 外部存储 breaking；0.7.2 = 普通更新自动提交）
 │   ├── scripts/                   # 发布与预检（release.js、release-preflight、check-release-manifest）
 │   ├── dist/                      # CLI 构建产物与复制后的分发模板（勿手改）
-│   └── test/                      # vitest（含 utils/marketplace.test.ts 的市场一致性回归）
+│   └── test/                      # vitest（含市场一致性回归）
+│       ├── commands/update-storage-commit.integration.test.ts # 外部更新提交、隔离与失败恢复
+│       └── scripts/release-preflight.test.ts # npm 处理延迟与版本/tag 重试
 ├── packages/core/                 # trellis-wiki-core SDK
 │   ├── src/{channel,mem,task,testing}/   # 公开子路径领域（mem 不进根 barrel）
 │   └── dist/                      # SDK 构建产物（勿手改）

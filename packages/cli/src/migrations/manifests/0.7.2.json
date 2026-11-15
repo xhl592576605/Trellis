@@ -1,0 +1,9 @@
+{
+  "version": "0.7.2",
+  "description": "Commit ordinary external wiki updates and tolerate npm package processing delays",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Bug Fixes:**\n- Ordinary `trellis-wiki update` and `update --migrate` now commit their changed external wiki templates, version/hash receipts and newly created migration task with a project-scoped message. Checkout files and unrelated staged storage work remain outside the commit. Failed Git commits can be retried after checking the saved output snapshot.\n- File migrations and overwritten-template hash tracking resolve the external workflow directory directly, including installations without the optional `.trellis` browse link.\n- CI waits for core to become visible before publishing the CLI, allows up to 30 public npm visibility checks at 10-second intervals, and retries stale version/dist-tag metadata instead of exiting immediately.",
+  "migrations": [],
+  "notes": "Patch release. Existing external projects receive automatic wiki update commits from this CLI version; legacy in-checkout updates keep manual Git commits. No storage migration is required."
+}

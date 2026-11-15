@@ -118,7 +118,8 @@ async function sleep(ms) {
 }
 
 async function retry(label, fn) {
-  const attempts = 6;
+  // npm may accept an upload while the package is still processing.
+  const attempts = 30;
   let lastError;
   for (let i = 1; i <= attempts; i += 1) {
     try {
@@ -265,7 +266,7 @@ function verifyPackedCli() {
   }
 }
 
-async function verifyNpm({ packageFilter }) {
+export async function verifyNpm({ packageFilter }) {
   const v = checkVersions({ requireTag: false });
   const tag = computeNpmTag(v.cliVersion);
   const packages = [
@@ -277,13 +278,13 @@ async function verifyNpm({ packageFilter }) {
     await retry(`${pkg.name}@${v.cliVersion}`, () => {
       const version = npmViewJSON(`${pkg.name}@${v.cliVersion} version`);
       if (version !== v.cliVersion) {
-        fail(
+        throw new Error(
           `${pkg.name}@${v.cliVersion} is not visible on the public npm registry.`,
         );
       }
       const taggedVersion = npmViewJSON(`${pkg.name}@${tag} version`);
       if (taggedVersion !== v.cliVersion) {
-        fail(
+        throw new Error(
           `${pkg.name}@${tag} resolves to ${taggedVersion ?? "nothing"}, expected ${v.cliVersion}.`,
         );
       }
@@ -342,4 +343,6 @@ async function main() {
   fail(`unknown command: ${cmd}`);
 }
 
-main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

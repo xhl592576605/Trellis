@@ -14,7 +14,6 @@
  * resume without recopying over newer destination data.
  */
 
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -25,6 +24,7 @@ import { validateProjectName } from "../templates/shared-hooks/external-store.js
 import chalk from "chalk";
 
 import { withStorageMigrationLock } from "../utils/storage-migration-lock.js";
+import { productFiles, commitStorageFiles } from "../utils/storage-update.js";
 import { VERSION } from "../constants/version.js";
 import { DIR_NAMES } from "../constants/paths.js";
 import {
@@ -371,72 +371,16 @@ function publishImage(image: string, dest: string, copy: boolean): void {
   }
 }
 
-/** Product files only; runtime/cache/backup bytes never enter a migration commit. */
-function productFiles(root: string): Record<string, string> {
-  const files: Record<string, string> = {};
-  const walk = (dir: string, rel: string[]): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const parts = [...rel, entry.name];
-      if (
-        parts.some(
-          (name) =>
-            [".runtime", ".git", ".cache", "worktrees", "__pycache__"].includes(
-              name,
-            ) ||
-            name.startsWith(".backup-") ||
-            JUNK_FILE_NAMES.has(name),
-        ) ||
-        entry.name.endsWith(".pyc")
-      )
-        continue;
-      if (entry.isDirectory()) walk(path.join(dir, entry.name), parts);
-      else if (entry.isFile())
-        files[parts.join("/")] = createHash("sha256")
-          .update(fs.readFileSync(path.join(dir, entry.name)))
-          .digest("hex");
-    }
-  };
-  walk(root, []);
-  return files;
-}
-
 function commitStorageImport(
   storageRoot: string,
   projectName: string,
   paths: string[],
 ): void {
-  if (paths.length === 0) return;
-  const specs = paths.map((name) => ":(literal)" + name);
   try {
-    // Add before diff so new untracked imports are visible. Exact file paths
-    // also preserve new sibling tasks written between interrupted invocations.
-    execFileSync("git", ["add", "--", ...specs], {
-      cwd: storageRoot,
-      stdio: "pipe",
-    });
-    const changed = execFileSync(
-      "git",
-      ["diff", "--cached", "--name-only", "--", ...specs],
-      {
-        cwd: storageRoot,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    if (!changed.trim()) return;
-    execFileSync(
-      "git",
-      [
-        "commit",
-        "-m",
-        `chore(${projectName}): import external workflow data`,
-        "--",
-        ...specs,
-      ],
-      {
-        cwd: storageRoot,
-        stdio: "pipe",
-      },
+    commitStorageFiles(
+      storageRoot,
+      paths,
+      `chore(${projectName}): import external workflow data`,
     );
   } catch (error) {
     throw new Error(

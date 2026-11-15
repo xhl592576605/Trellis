@@ -84,6 +84,11 @@ jobs:
         if: steps.plan.outputs.core_publish != 'true'
         run: echo "trellis-wiki-core@${{ steps.plan.outputs.version }} already published; skipping."
 
+      # An accepted core upload may still be processing on public npm.
+      # Wait before publishing the CLI that pins this exact core version.
+      - name: Wait for trellis-wiki-core on public npm
+        run: node packages/cli/scripts/release-preflight.js verify-npm --package core
+
       - name: Publish trellis-wiki
         if: steps.plan.outputs.cli_publish == 'true'
         run: pnpm publish --access public --no-git-checks --tag ${{ steps.plan.outputs.tag }}

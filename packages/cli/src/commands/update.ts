@@ -12,6 +12,7 @@ import {
   renderWorkflowPaths,
 } from "../utils/external-store.js";
 import { runStorageMigration, isLegacyLayout } from "./storage-migration.js";
+import { withStorageUpdate } from "../utils/storage-update.js";
 import { crossesStorageMigration } from "../migrations/index.js";
 import { writeFileAtomic } from "../utils/atomic-write.js";
 import type { AITool } from "../types/ai-tools.js";
@@ -1497,14 +1498,16 @@ function dirMatchesCurrentTemplates(
   dirRelativePath: string,
   templates: Map<string, string>,
 ): boolean {
-  const dirFullPath = path.join(cwd, dirRelativePath);
+  const dirFullPath = resolveManagedPath(cwd, dirRelativePath);
   if (!fs.existsSync(dirFullPath)) return false;
 
   const files = collectAllFiles(dirFullPath, cwd);
   if (files.length === 0) return false;
 
   for (const fullPath of files) {
-    const relativePath = toPosix(path.relative(cwd, fullPath));
+    const relativePath = toPosix(
+      path.join(dirRelativePath, path.relative(dirFullPath, fullPath)),
+    );
     const templateContent = templates.get(relativePath);
     if (templateContent === undefined) return false;
     if (fs.readFileSync(fullPath, "utf-8") !== templateContent) return false;
@@ -1525,7 +1528,7 @@ function isDirectorySafeToReplace(
   hashes: TemplateHashes,
   templates: Map<string, string>,
 ): boolean {
-  const dirFullPath = path.join(cwd, dirRelativePath);
+  const dirFullPath = resolveManagedPath(cwd, dirRelativePath);
   if (!fs.existsSync(dirFullPath)) return true;
 
   const files = collectAllFiles(dirFullPath, cwd);
@@ -1534,7 +1537,9 @@ function isDirectorySafeToReplace(
   for (const fullPath of files) {
     // POSIX-normalize: hashes/templates keys are persisted as POSIX, but
     // `path.relative` returns OS-native separators (backslash on Windows).
-    const relativePath = toPosix(path.relative(cwd, fullPath));
+    const relativePath = toPosix(
+      path.join(dirRelativePath, path.relative(dirFullPath, fullPath)),
+    );
     const storedHash = hashes[relativePath];
     const templateContent = templates.get(relativePath);
 
@@ -1576,7 +1581,7 @@ function isFileSafeToReplace(
   relativePath: string,
   templates: Map<string, string>,
 ): boolean {
-  const fullPath = path.join(cwd, relativePath);
+  const fullPath = resolveManagedPath(cwd, relativePath);
   if (!fs.existsSync(fullPath)) return true;
 
   const templateContent = templates.get(relativePath);
@@ -1642,7 +1647,7 @@ export function classifyMigrations(
       continue;
     }
 
-    const oldPath = path.join(cwd, item.from);
+    const oldPath = resolveManagedPath(cwd, item.from);
     const oldExists = fs.existsSync(oldPath);
 
     if (!oldExists) {
@@ -1652,7 +1657,7 @@ export function classifyMigrations(
     }
 
     if (item.type === "rename" && item.to) {
-      const newPath = path.join(cwd, item.to);
+      const newPath = resolveManagedPath(cwd, item.to);
       const newExists = fs.existsSync(newPath);
 
       if (newExists) {
@@ -1672,7 +1677,7 @@ export function classifyMigrations(
         result.auto.push(item);
       }
     } else if (item.type === "rename-dir" && item.to) {
-      const newPath = path.join(cwd, item.to);
+      const newPath = resolveManagedPath(cwd, item.to);
       const newExists = fs.existsSync(newPath);
 
       if (newExists) {
@@ -1909,8 +1914,8 @@ export async function executeMigrations(
   // 1. Execute auto migrations (unmodified files and directories)
   for (const item of sortedAuto) {
     if (item.type === "rename" && item.to) {
-      const oldPath = path.join(cwd, item.from);
-      const newPath = path.join(cwd, item.to);
+      const oldPath = resolveManagedPath(cwd, item.from);
+      const newPath = resolveManagedPath(cwd, item.to);
 
       // Ensure target directory exists
       fs.mkdirSync(path.dirname(newPath), { recursive: true });
@@ -1929,8 +1934,8 @@ export async function executeMigrations(
 
       result.renamed++;
     } else if (item.type === "rename-dir" && item.to) {
-      const oldPath = path.join(cwd, item.from);
-      const newPath = path.join(cwd, item.to);
+      const oldPath = resolveManagedPath(cwd, item.from);
+      const newPath = resolveManagedPath(cwd, item.to);
       const oldPrefix = item.from.endsWith("/") ? item.from : item.from + "/";
       const newPrefix = item.to.endsWith("/") ? item.to : item.to + "/";
 
@@ -1991,7 +1996,7 @@ export async function executeMigrations(
 
       result.renamed++;
     } else if (item.type === "delete") {
-      const filePath = path.join(cwd, item.from);
+      const filePath = resolveManagedPath(cwd, item.from);
       fs.unlinkSync(filePath);
 
       // Remove from hash tracking
@@ -2031,8 +2036,8 @@ export async function executeMigrations(
     // the inline copy is more discoverable when the user wants to diff or merge
     // their customizations against the new template.
     if (item.type === "rename" && item.to) {
-      const oldPath = path.join(cwd, item.from);
-      const newPath = path.join(cwd, item.to);
+      const oldPath = resolveManagedPath(cwd, item.from);
+      const newPath = resolveManagedPath(cwd, item.to);
 
       fs.mkdirSync(path.dirname(newPath), { recursive: true });
 
@@ -2054,7 +2059,7 @@ export async function executeMigrations(
 
       result.renamed++;
     } else if (item.type === "delete") {
-      const filePath = path.join(cwd, item.from);
+      const filePath = resolveManagedPath(cwd, item.from);
 
       if (action === "backup-rename") {
         // Keep a .backup copy in place before deletion so the user can recover
@@ -2151,7 +2156,7 @@ export async function update(options: UpdateOptions): Promise<void> {
   // update: it must run before (and independently of) any template work.
   if (options.migrateStorage) {
     await runStorageMigration(cwd, options, () =>
-      update({
+      updateTemplates({
         ...options,
         migrateStorage: false,
         migrate: true,
@@ -2162,6 +2167,19 @@ export async function update(options: UpdateOptions): Promise<void> {
     return;
   }
 
+  if (options.dryRun) return updateTemplates(options);
+  await withStorageUpdate(
+    cwd,
+    VERSION,
+    getAllMigrations().flatMap((item) =>
+      item.to ? [item.from, item.to] : [item.from],
+    ),
+    () => updateTemplates(options),
+  );
+}
+
+async function updateTemplates(options: UpdateOptions): Promise<void> {
+  const cwd = process.cwd();
   // Check if Trellis is initialized
   if (!fs.existsSync(resolveWorkflowDir(cwd))) {
     console.log(chalk.red("Error: Trellis not initialized in this directory."));
@@ -2377,8 +2395,8 @@ export async function update(options: UpdateOptions): Promise<void> {
     if (item.type !== "rename" && item.type !== "rename-dir") return false;
     if (!item.from || !item.to) return false;
 
-    const oldPath = path.join(cwd, item.from);
-    const newPath = path.join(cwd, item.to);
+    const oldPath = resolveManagedPath(cwd, item.from);
+    const newPath = resolveManagedPath(cwd, item.to);
 
     // Orphaned if: source exists AND target doesn't exist
     // AND this migration isn't already in pendingMigrations
@@ -2822,7 +2840,7 @@ export async function update(options: UpdateOptions): Promise<void> {
   }
   // Only hash overwritten files (not skipped or .new copies)
   for (const file of changes.changedFiles) {
-    const fullPath = path.join(cwd, file.relativePath);
+    const fullPath = resolveManagedPath(cwd, file.relativePath);
     if (fs.existsSync(fullPath)) {
       const content = fs.readFileSync(fullPath, "utf-8");
       if (content === file.newContent) {
