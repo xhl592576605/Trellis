@@ -69,6 +69,8 @@ import {
 } from "../src/templates/markdown/index.js";
 import * as markdownExports from "../src/templates/markdown/index.js";
 import { TrellisContext } from "../src/templates/opencode/lib/trellis-context.js";
+import { getAllAgents as getGeminiAgents } from "../src/templates/gemini/index.js";
+import { resolveWorkflowDir } from "../src/utils/external-store.js";
 
 afterEach(() => {
   clearManifestCache();
@@ -8530,25 +8532,15 @@ describe("regression: opencode plugin files have only export default (#212)", ()
 describe("regression: Gemini CLI 0.40.x template compatibility (#224)", () => {
   const __dirname2 = path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(__dirname2, "../../..");
-  const geminiAgentsDir = path.resolve(
-    __dirname2,
-    "../src/templates/gemini/agents",
-  );
-
   it("[#224] gemini agent .md files do NOT carry a comma-separated tools line", () => {
     // Gemini CLI 0.40+ Zod schema rejects `tools: a, b, c` with
     // "tools: Expected array, received string". Trellis omits the line so
     // sub-agents inherit parent tools (per research/agent-tools-frontmatter.md).
-    for (const entry of fs.readdirSync(geminiAgentsDir)) {
-      if (!entry.endsWith(".md")) continue;
-      const content = fs.readFileSync(
-        path.join(geminiAgentsDir, entry),
-        "utf-8",
-      );
+    for (const { name, content } of getGeminiAgents()) {
       const fm = content.split("---\n")[1] ?? "";
       expect(
         fm,
-        `gemini/agents/${entry} must NOT include a tools: line — Gemini CLI 0.40+ rejects the comma-separated form`,
+        `gemini/agents/${name}.md must NOT include a tools: line — Gemini CLI 0.40+ rejects the comma-separated form`,
       ).not.toMatch(/^tools:/m);
     }
   });
@@ -9593,14 +9585,22 @@ print(json.dumps({
 describe("regression: .trellis/scripts stays byte-identical to templates/trellis/scripts", () => {
   // `.trellis/scripts/` is Trellis's own dogfood copy;
   // `packages/cli/src/templates/trellis/scripts/` is what ships to users.
-  // They are two physical copies of the same 28 files and nothing enforced
+  // They are two physical copies of the same runtime files and nothing enforced
   // parity, so one-sided edits landed silently — PR #390 changed the template's
   // `common/session_context.py` upgrade hint and left the dogfood copy on the
   // old wording for a month. This test turns that whole class of drift into a
   // build failure.
   const __dirnameParity = path.dirname(fileURLToPath(import.meta.url));
   const parityRepoRoot = path.resolve(__dirnameParity, "../../..");
-  const dogfoodScriptsRoot = path.join(parityRepoRoot, ".trellis", "scripts");
+  const dogfoodScriptsRoot = path.join(
+    resolveWorkflowDir(parityRepoRoot),
+    "scripts",
+  );
+  // A fresh checkout/CI has no private external wiki installation. Keep
+  // parity strict when a dogfood copy exists; missing individual files must
+  // still fail. Clean-checkout runtime behavior is covered by the external
+  // storage/init integration suites.
+  const parityIt = fs.existsSync(dogfoodScriptsRoot) ? it : it.skip;
   const templateScriptsRoot = path.join(
     parityRepoRoot,
     "packages/cli/src/templates/trellis/scripts",
@@ -9624,7 +9624,7 @@ describe("regression: .trellis/scripts stays byte-identical to templates/trellis
 
   const templateFiles = listPyFiles(templateScriptsRoot);
 
-  it("both trees hold the same set of .py files", () => {
+  parityIt("both trees hold the same set of .py files", () => {
     const dogfoodFiles = listPyFiles(dogfoodScriptsRoot);
     expect(
       dogfoodFiles,
@@ -9635,7 +9635,7 @@ describe("regression: .trellis/scripts stays byte-identical to templates/trellis
   });
 
   for (const relativePath of templateFiles) {
-    it(`${relativePath} is byte-identical in both trees`, () => {
+    parityIt(`${relativePath} is byte-identical in both trees`, () => {
       const dogfoodPath = path.join(dogfoodScriptsRoot, relativePath);
       expect(
         fs.existsSync(dogfoodPath),
