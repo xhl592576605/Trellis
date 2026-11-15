@@ -22,6 +22,7 @@
  */
 
 import { existsSync, readFileSync } from "fs"
+import { readExternalStore, renderWorkflowPaths } from "../lib/external-store.js"
 import { join } from "path"
 import {
   MESSAGES_TRANSFORM_HOOK,
@@ -29,7 +30,7 @@ import {
   platformInputFromMessages,
   prependEphemeralText,
 } from "../lib/context-visibility.js"
-import { TrellisContext, debugLog, isTrellisSubagent } from "../lib/trellis-context.js"
+import { TrellisContext, debugLog, isTrellisSubagent, workflowDirOf } from "../lib/trellis-context.js"
 
 // Supports STATUS values with letters, digits, underscores, hyphens
 // (so "in-review" / "blocked-by-team" work alongside "in_progress").
@@ -69,7 +70,7 @@ function unquoteYaml(s) {
  * only (missing key keeps the default; non-string value keeps the default).
  */
 function readSkipKeyword(directory) {
-  const path = join(directory, ".trellis", "config.yaml")
+  const path = join(workflowDirOf(directory), "config.yaml")
   if (!existsSync(path)) return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD
   let text
   try {
@@ -121,11 +122,13 @@ function promptHasSkipKeyword(text, keyword) {
  * rather than the plugin silently masking it.
  */
 function loadBreadcrumbs(directory) {
-  const workflowPath = join(directory, ".trellis", "workflow.md")
+  const workflowPath = join(workflowDirOf(directory), "workflow.md")
   if (!existsSync(workflowPath)) return {}
   let content
   try {
     content = readFileSync(workflowPath, "utf-8")
+    const store = readExternalStore(directory)
+    if (store) content = renderWorkflowPaths(content, store.projectDir)
   } catch {
     return {}
   }

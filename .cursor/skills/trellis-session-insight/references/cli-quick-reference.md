@@ -1,3 +1,5 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # `trellis mem` CLI Reference
 
 Full flag reference for the five subcommands. Pin this as the authoritative source — `trellis mem help` prints the same content at runtime, so anything here that drifts is a bug.

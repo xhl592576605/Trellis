@@ -22,7 +22,7 @@ Trellis 任务脚本（task.py / get_context.py 等）不在本仓库：先读�
 - `packages/core` = `trellis-wiki-core`：channel / mem / task / testing 领域 SDK；不得打印终端输出、不得 `process.exit`、不得依赖 Commander/Chalk。
 - CLI 只通过公开子路径 import core（`trellis-wiki-core/channel` 等）；两包版本锁步，一个 git tag 一个版本。
 - `marketplace/` 是内置模板市场目录（本仓库内容，`--registry`/`workflow -m` 默认拉取源，勿删）。
-- 写码前读 `.trellis/spec/cli/backend/index.md`（或 core/unit-test 对应层）的 Pre-Development Checklist。
+- 写码前读 `/Users/xuhuale/.trellis-wiki/Trellis/spec/cli/backend/index.md`（或 core/unit-test 对应层）的 Pre-Development Checklist。
 
 ## 双 Git 边界
 
@@ -35,12 +35,12 @@ Trellis 任务脚本（task.py / get_context.py 等）不在本仓库：先读�
 
 ## 发布
 
-CI-only：先 core 后 CLI；发布前 gate 为 `check-manifest-continuity` + `check-release-manifest`（本地 manifest 发布说明校验，取代旧 docs-site 检查）+ `verify-packed-cli`。禁止本地 `npm publish`。详见 `.trellis/spec/cli/backend/release-process.md`。
+CI-only：先 core 后 CLI；发布前 gate 为 `check-manifest-continuity` + `check-release-manifest`（本地 manifest 发布说明校验，取代旧 docs-site 检查）+ `verify-packed-cli`。禁止本地 `npm publish`。详见 `/Users/xuhuale/.trellis-wiki/Trellis/spec/cli/backend/release-process.md`。
 
 ## 文档地图
 
 - [CODEMAP.md](./CODEMAP.md) — 目录职责导航。
-- `.trellis/spec/` — 分层编码规范（外部存储内）。
+- `/Users/xuhuale/.trellis-wiki/Trellis/spec/` — 分层编码规范（外部存储内）。
 - 局部 `AGENTS.md` 仅在真实职责边界添加；默认继承本文件。
 
 提交代码前，检查当前 staged 的文件并保持 CODEMAP.md 同步：新增文件或目录要添加条目，已删除的条目要移除，职责变化的目录要更新描述。
@@ -52,10 +52,10 @@ These instructions are for AI assistants working in this project.
 
 This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
 
-- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
-- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `.trellis/workspace/` — per-developer journals and session traces
-- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+- `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` — development phases, when to create tasks, skill routing
+- `/Users/xuhuale/.trellis-wiki/Trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
+- `/Users/xuhuale/.trellis-wiki/Trellis/workspace/` — per-developer journals and session traces
+- `/Users/xuhuale/.trellis-wiki/Trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
 
 If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
 

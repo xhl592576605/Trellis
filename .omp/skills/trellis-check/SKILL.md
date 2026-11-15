@@ -3,6 +3,9 @@ name: trellis-check
 description: "Comprehensive quality verification: spec compliance, lint, type-check, tests, cross-layer data flow, code reuse, and consistency checks. Use when code is written and needs quality verification, before committing changes, or to catch context drift during long sessions."
 ---
 
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
+
 # Code Quality Check
 
 Comprehensive quality verification for recently written code. Combines spec compliance, cross-layer safety, and pre-commit checks.
@@ -16,16 +19,22 @@ git diff --name-only HEAD
 git status
 ```
 
-## Step 2: Read Applicable Specs
+## Step 2: Read Task Artifacts and Applicable Specs
+
+Read the current task artifacts in order:
+
+- `prd.md`
+- `design.md` if present
+- `implement.md` if present
 
 ```bash
-python3 ./.trellis/scripts/get_context.py --mode packages
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/get_context.py --mode packages
 ```
 
 For each changed package/layer, read the spec index and follow its **Quality Check** section:
 
 ```bash
-cat .trellis/spec/<package>/<layer>/index.md
+cat /Users/xuhuale/.trellis-wiki/Trellis/spec/<package>/<layer>/index.md
 ```
 
 Read the specific guideline files referenced — the index is a pointer, not the goal.
@@ -52,9 +61,17 @@ Run the project's lint, type-check, and test commands. Fix any failures before p
 
 ### Spec Sync
 
-- [ ] Does `.trellis/spec/` need updates? (new patterns, conventions, lessons learned)
+- [ ] Does `/Users/xuhuale/.trellis-wiki/Trellis/spec/` need updates? (new patterns, conventions, lessons learned)
 
 > "If I fixed a bug or discovered something non-obvious, should I document it so future me won't hit the same issue?" → If YES, update the relevant spec doc.
+
+### Scope Discipline
+
+- [ ] Any tidying of code the task did not require?
+- [ ] Any abstraction, config or extension point added for a case that does not exist yet?
+- [ ] Any speculative fallback for a state that cannot occur?
+- [ ] Any file changed that the acceptance criteria do not mention?
+- [ ] Any workaround added at the caller instead of a fix where the behavior actually lives?
 
 ## Step 5: Cross-Layer Dimensions (if applicable)
 
@@ -73,7 +90,7 @@ Skip this step if your change is confined to a single layer.
   ```bash
   grep -r "pattern" src/
   ```
-- [ ] If 2+ places define same value → extracted to shared constant?
+- [ ] If the same value repeats, does it represent one stable concept whose callers must change together? Extract only then — two literals that merely happen to match today should stay separate.
 - [ ] After batch modification, all occurrences updated?
 
 ### C. Import/Dependency (creating new files)
@@ -89,4 +106,9 @@ Skip this step if your change is confined to a single layer.
 
 ## Step 6: Report and Fix
 
-Report violations found and fix them directly. Re-run project checks after fixes.
+Report every violation you find. Then:
+
+- Mechanical and local (lint nit, missing type, wrong import, dead branch, failing assertion) → fix in place, then re-run project checks.
+- Design or judgment (naming a shared concept, moving a module boundary, changing a public interface, reassigning where behavior lives) → record the evidence and your recommendation, and stop. Do not rewrite it silently.
+
+If a fix would touch files outside the current task's scope, say so and stop instead of widening the change.

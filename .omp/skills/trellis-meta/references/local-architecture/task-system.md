@@ -1,17 +1,18 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Local Task System
 
-The Trellis task system is stored entirely under `.trellis/tasks/` in the user project. Each task is a directory containing requirements, context, research, state, and relationship information.
+The Trellis task system is stored entirely under `/Users/xuhuale/.trellis-wiki/Trellis/tasks/` in the user project. Each task is a directory containing requirements, context, research, state, and relationship information.
 
 ## Task Directory Structure
 
 ```text
-.trellis/tasks/
+/Users/xuhuale/.trellis-wiki/Trellis/tasks/
 ├── 04-28-example-task/
 │   ├── task.json
 │   ├── prd.md
-│   ├── info.md
-│   ├── implement.jsonl
-│   ├── check.jsonl
+│   ├── design.md
+│   ├── implement.md
 │   └── research/
 └── archive/
     └── 2026-04/
@@ -20,10 +21,9 @@ The Trellis task system is stored entirely under `.trellis/tasks/` in the user p
 | File | Purpose |
 | --- | --- |
 | `task.json` | Task metadata: status, assignee, priority, branch, parent/child tasks, and similar fields. |
-| `prd.md` | Requirements document; the most important business context during implementation. |
-| `info.md` | Optional technical design. |
-| `implement.jsonl` | List of spec/research files the implement agent must read first. |
-| `check.jsonl` | List of spec/research files the check agent must read first. |
+| `prd.md` | Requirements, constraints, and acceptance criteria. Lightweight tasks may be PRD-only. |
+| `design.md` | Technical design for complex tasks: boundaries, contracts, data flow, compatibility, tradeoffs. |
+| `implement.md` | Execution plan for complex tasks: ordered checklist, validation commands, review gates, rollback points. |
 | `research/` | Research artifacts. Complex findings should not live only in chat. |
 
 ## `task.json`
@@ -42,14 +42,41 @@ The Trellis task system is stored entirely under `.trellis/tasks/` in the user p
 | `commit` / `pr_url` | Commit and PR information after completion. |
 | `meta` | Extension fields. |
 
-The AI should not treat phase numbers as task status. Task progress is mainly determined by `status`, `prd.md`, whether JSONL context is configured, and the phase descriptions in `workflow.md`.
+## Parent / Child Task Trees
+
+Parent/child task relationships are for work structure. A parent task groups related deliverables under one source requirement set; it is not a dependency scheduler and does not replace the child task's own planning artifacts.
+
+Use a parent task when a request has multiple independently verifiable deliverables. The parent owns:
+
+- Source requirements and user-facing scope.
+- The map of child tasks and their responsibility boundaries.
+- Cross-child acceptance criteria and final integration review.
+
+Use child tasks for deliverables that can move through planning, implementation, check, and archive independently. If one child depends on another, write that dependency in the child `prd.md` / `implement.md`; do not rely on tree position to imply ordering.
+
+Create new children with:
+
+```bash
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py create "<child title>" --description "<one-line summary>" --slug <child-slug> --parent <parent-dir>
+```
+
+Link or unlink existing tasks with:
+
+```bash
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py add-subtask <parent-dir> <child-dir>
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py remove-subtask <parent-dir> <child-dir>
+```
+
+`children` on the parent is a historical list. When a child is archived, Trellis keeps that child name in the parent so progress like `[2/3 done]` remains meaningful after completed children move to `archive/`.
+
+The AI should not treat phase numbers as task status. Task progress is mainly determined by `status`, artifact presence (`prd.md`, optional `design.md` / `implement.md`), the phase descriptions in `workflow.md`.
 
 ## Active Task
 
 The user sees a "current task," but Trellis stores active task state per session.
 
 ```text
-.trellis/.runtime/sessions/<context-key>.json
+/Users/xuhuale/.trellis-wiki/Trellis/.runtime/sessions/<context-key>.json
 ```
 
 `task.py start` writes the task path into the runtime session file for the current session. `task.py current --source` shows the current task and where it came from. Different AI windows can point to different tasks without overwriting each other.
@@ -58,13 +85,13 @@ If the platform or shell environment has no stable session identity, `task.py st
 
 ## JSONL Context
 
-`implement.jsonl` and `check.jsonl` are context manifests for sub-agents to read first.
+The current agent loads task artifacts, research, and applicable specs directly. `implement.md` remains the human-readable execution plan.
 
 Format:
 
 ```jsonl
-{"file": ".trellis/spec/cli/backend/index.md", "reason": "Backend conventions"}
-{"file": ".trellis/tasks/04-28-example/research/api.md", "reason": "API research"}
+{"file": "/Users/xuhuale/.trellis-wiki/Trellis/spec/cli/backend/index.md", "reason": "Backend conventions"}
+{"file": "/Users/xuhuale/.trellis-wiki/Trellis/tasks/04-28-example/research/api.md", "reason": "API research"}
 ```
 
 Rules:
@@ -77,13 +104,13 @@ Rules:
 ## Common Commands
 
 ```bash
-python3 ./.trellis/scripts/task.py create "<title>" --description "<one-line summary>" --slug <slug>
-python3 ./.trellis/scripts/task.py start <task>
-python3 ./.trellis/scripts/task.py current --source
-python3 ./.trellis/scripts/task.py add-context <task> implement <file> <reason>
-python3 ./.trellis/scripts/task.py validate <task>
-python3 ./.trellis/scripts/task.py finish
-python3 ./.trellis/scripts/task.py archive <task>
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py create "<title>" --description "<one-line summary>" --slug <slug>
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py start <task>
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py current --source
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py add-context <task> implement <file> <reason>
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py validate <task>
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py finish
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py archive <task>
 ```
 
 When modifying the task system, the AI should prefer script commands to maintain structure. Edit JSON/Markdown directly only when scripts do not cover the need.
@@ -92,10 +119,10 @@ When modifying the task system, the AI should prefer script commands to maintain
 
 | Need | Edit location |
 | --- | --- |
-| Change the default task template | `.trellis/scripts/common/task_store.py` and task creation instructions. |
-| Change status semantics | `.trellis/workflow.md`, workflow-state hook logic, and task usage conventions. |
-| Add task lifecycle actions | `hooks.after_*` in `.trellis/config.yaml`. |
-| Change context rules | Phase 1.3 in `.trellis/workflow.md` and related platform agent/hook instructions. |
-| Change archive policy | `.trellis/scripts/common/task_store.py` / `task_utils.py`. |
+| Change the default task template | `/Users/xuhuale/.trellis-wiki/Trellis/scripts/common/task_store.py` and task creation instructions. |
+| Change status semantics | `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`, workflow-state hook logic, and task usage conventions. |
+| Add task lifecycle actions | `hooks.after_*` in `/Users/xuhuale/.trellis-wiki/Trellis/config.yaml`. |
+| Change context rules | Planning artifact guidance in `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` and related platform agent/hook instructions. |
+| Change archive policy | `/Users/xuhuale/.trellis-wiki/Trellis/scripts/common/task_store.py` / `task_utils.py`. |
 
 These are local files in the user project. Do not default to editing Trellis CLI source code unless the user wants to contribute upstream.

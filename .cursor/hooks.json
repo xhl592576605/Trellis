@@ -1,7 +1,6 @@
 {
   "version": 1,
   "hooks": {
-    "preToolUse": [],
     "sessionStart": [
       {
         "command": "python3 .cursor/hooks/session-start.py",

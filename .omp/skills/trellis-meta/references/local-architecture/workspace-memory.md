@@ -1,11 +1,13 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Local Workspace Memory System
 
-`.trellis/workspace/` stores cross-session memory. Its purpose is to let AI and humans understand what happened before across different windows and different days.
+`/Users/xuhuale/.trellis-wiki/Trellis/workspace/` stores cross-session memory. Its purpose is to let AI and humans understand what happened before across different windows and different days.
 
 ## Directory Structure
 
 ```text
-.trellis/workspace/
+/Users/xuhuale/.trellis-wiki/Trellis/workspace/
 ├── index.md
 └── <developer>/
     ├── index.md
@@ -15,20 +17,20 @@
 
 | File | Purpose |
 | --- | --- |
-| `.trellis/.developer` | Current developer identity. |
-| `.trellis/workspace/index.md` | Global workspace overview. |
-| `.trellis/workspace/<developer>/index.md` | Session index for a developer. |
-| `.trellis/workspace/<developer>/journal-N.md` | Session journal. |
+| `/Users/xuhuale/.trellis-wiki/Trellis/.developer` | Current developer identity. |
+| `/Users/xuhuale/.trellis-wiki/Trellis/workspace/index.md` | Global workspace overview. |
+| `/Users/xuhuale/.trellis-wiki/Trellis/workspace/<developer>/index.md` | Session index for a developer. |
+| `/Users/xuhuale/.trellis-wiki/Trellis/workspace/<developer>/journal-N.md` | Session journal. |
 
 ## Developer Identity
 
 Run this the first time:
 
 ```bash
-python3 ./.trellis/scripts/init_developer.py <name>
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/init_developer.py <name>
 ```
 
-This creates `.trellis/.developer` and the corresponding workspace directory. The AI should not change developer identity casually; if the identity is wrong, first confirm who is using the current project.
+This creates `/Users/xuhuale/.trellis-wiki/Trellis/.developer` and the corresponding workspace directory. The AI should not change developer identity casually; if the identity is wrong, first confirm who is using the current project.
 
 ## Journal
 
@@ -37,7 +39,7 @@ This creates `.trellis/.developer` and the corresponding workspace directory. Th
 Common command for recording a session:
 
 ```bash
-python3 ./.trellis/scripts/add_session.py \
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/add_session.py \
   --title "Session title" \
   --summary "What changed" \
   --commit "abc1234"
@@ -49,22 +51,22 @@ Planning or review work without a commit can also be recorded by using `--no-com
 
 | System | What it stores |
 | --- | --- |
-| `.trellis/tasks/` | Requirements, design, research, and state for a specific task. |
-| `.trellis/workspace/` | Work records across tasks and sessions. |
-| `.trellis/spec/` | Engineering knowledge preserved as long-term conventions. |
+| `/Users/xuhuale/.trellis-wiki/Trellis/tasks/` | Requirements, design, research, and state for a specific task. |
+| `/Users/xuhuale/.trellis-wiki/Trellis/workspace/` | Work records across tasks and sessions. |
+| `/Users/xuhuale/.trellis-wiki/Trellis/spec/` | Engineering knowledge preserved as long-term conventions. |
 
-If information is only useful for the current task, put it in the task directory.  
-If information describes what happened in the current session, put it in the workspace journal.  
+If information is only useful for the current task, put it in the task directory.\
+If information describes what happened in the current session, put it in the workspace journal.\
 If information should be followed every time code is written in the future, put it in spec.
 
 ## Local Customization Points
 
 | Need | Edit location |
 | --- | --- |
-| Change maximum journal lines | `max_journal_lines` in `.trellis/config.yaml`. |
-| Change session auto-commit message | `session_commit_message` in `.trellis/config.yaml`. |
-| Change session content format | `.trellis/scripts/add_session.py`. |
-| Change how workspace is displayed in context | `.trellis/scripts/common/session_context.py`. |
+| Change maximum journal lines | `max_journal_lines` in `/Users/xuhuale/.trellis-wiki/Trellis/config.yaml`. |
+| Change session auto-commit message | `session_commit_message` in `/Users/xuhuale/.trellis-wiki/Trellis/config.yaml`. |
+| Change session content format | `/Users/xuhuale/.trellis-wiki/Trellis/scripts/add_session.py`. |
+| Change how workspace is displayed in context | `/Users/xuhuale/.trellis-wiki/Trellis/scripts/common/session_context.py`. |
 
 ## AI Usage Rules
 

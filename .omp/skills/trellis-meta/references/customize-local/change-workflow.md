@@ -1,10 +1,12 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Change Local Workflow
 
-When the user wants to change Trellis phases, next-action hints, whether to create tasks, whether to use sub-agents, or when to check/wrap up, edit `.trellis/workflow.md` first.
+When the user wants to change Trellis phases, next-action hints, whether to create tasks, or when to check/wrap up, edit `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` first.
 
 ## Read These Files First
 
-1. `.trellis/workflow.md`
+1. `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`
 2. Entry files for the current platform, such as skills/commands/prompts/workflows
 3. The current task's `task.json` and `prd.md`
 
@@ -21,11 +23,11 @@ When the user wants to change Trellis phases, next-action hints, whether to crea
 
 ## Modification Steps
 
-1. Find the relevant section in `.trellis/workflow.md`.
+1. Find the relevant section in `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`.
 2. When changing rules, keep explicit trigger conditions and next actions.
 3. If adding or renaming a skill/agent, synchronize the corresponding files in platform directories.
-4. Workflow-state changes only need an edit to the `[workflow-state:STATUS]` block in `.trellis/workflow.md`. The hook is parser-only — it reads whatever you put in the block. Keep the opening and closing tags' STATUS strings identical (`[workflow-state:foo]…[/workflow-state:foo]`); mismatched STATUS pairs are silently dropped.
-5. Make the AI reread `.trellis/workflow.md`; do not keep using rules from the old conversation.
+4. Workflow-state changes only need an edit to the `[workflow-state:STATUS]` block in `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`. The hook is parser-only — it reads whatever you put in the block. Keep the opening and closing tags' STATUS strings identical (`[workflow-state:foo]…[/workflow-state:foo]`); mismatched STATUS pairs are silently dropped.
+5. Make the AI reread `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`; do not keep using rules from the old conversation.
 
 ## Example: Relax Task Creation Requirements
 
@@ -39,9 +41,9 @@ Task is not required when the answer is a one-reply explanation, no files are ch
 
 If the formal Phase 1 flow also needs to change, synchronize the Phase 1 section.
 
-## Example: One Platform Does Not Use Sub-Agents
+## Current-Agent Execution
 
-If the user wants only one platform to avoid sub-agents, first confirm whether that platform has a separate group in the workflow. Then change Phase 2 routing for that platform group instead of deleting all `trellis-implement` / `trellis-check` instructions across platforms.
+Research, implementation, and checking run in the current session on every platform. Keep `trellis-before-dev` and `trellis-check` as directly executed skills, and update the matching state blocks when changing their order.
 
 ## `/trellis:continue` Route Table
 
@@ -50,15 +52,16 @@ If the user wants only one platform to avoid sub-agents, first confirm whether t
 | `status` | Artifact state | Resume at |
 | --- | --- | --- |
 | `planning` | `prd.md` missing | Phase 1.1 (load `trellis-brainstorm`) |
-| `planning` | `prd.md` exists, `implement.jsonl` has no curated entries | Phase 1.3 (curate JSONL context) |
-| `planning` | `prd.md` exists, `implement.jsonl` curated | Phase 1.4 (run `task.py start`) |
+| `planning` | lightweight task with `prd.md` complete | ask for start review, then run `task.py start` |
+| `planning` | complex task missing `design.md` or `implement.md` | complete missing planning artifacts |
+| `planning` | complex task has `prd.md`, `design.md`, and `implement.md` | ask for start review, then run `task.py start` |
 | `in_progress` | no implementation in conversation history | Phase 2.1 (`trellis-implement`) |
 | `in_progress` | implementation done, no `trellis-check` run | Phase 2.2 (`trellis-check`) |
-| `in_progress` | check passed | Phase 3.1 (verify quality + spec update) |
+| `in_progress` | check passed | Phase 3.3 (spec update) → 3.4 (commit) |
 | `completed` | task is still in active tree | Phase 3.5 (run `/trellis:finish-work` to archive) |
 
-When you add a custom status (e.g. `in-review`), add a `[workflow-state:in-review]` block in `.trellis/workflow.md` for the per-turn breadcrumb AND extend this route table — usually by editing the `/trellis:continue` command file (`.{platform}/commands/trellis/continue.md` or equivalent) to add a row that decides where to resume from. Without the route entry, `/trellis:continue` will fall through to a default branch and the user will not land on the step you intended.
+When you add a custom status (e.g. `in-review`), add a `[workflow-state:in-review]` block in `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` for the per-turn breadcrumb AND extend this route table — usually by editing the `/trellis:continue` command file (`.{platform}/commands/trellis/continue.md` or equivalent) to add a row that decides where to resume from. Without the route entry, `/trellis:continue` will fall through to a default branch and the user will not land on the step you intended.
 
 ## Notes
 
-`.trellis/workflow.md` is the local project workflow, not an immutable template. The user can adapt it to team habits. After editing it, platform entry files may still contain old descriptions, so inspect them too.
+`/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` is the local project workflow, not an immutable template. The user can adapt it to team habits. After editing it, platform entry files may still contain old descriptions, so inspect them too.

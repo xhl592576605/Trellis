@@ -1,13 +1,15 @@
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 # Local Spec System
 
-`.trellis/spec/` is the user's project-specific engineering spec library. Trellis is not about making AI memorize conventions; it injects relevant specs or requires the AI to read them at the right time.
+`/Users/xuhuale/.trellis-wiki/Trellis/spec/` is the user's project-specific engineering spec library. Trellis is not about making AI memorize conventions; it injects relevant specs or requires the AI to read them at the right time.
 
 ## Directory Model
 
 A common single-repository structure:
 
 ```text
-.trellis/spec/
+/Users/xuhuale/.trellis-wiki/Trellis/spec/
 ├── backend/
 │   ├── index.md
 │   └── ...
@@ -22,7 +24,7 @@ A common single-repository structure:
 A common monorepo structure:
 
 ```text
-.trellis/spec/
+/Users/xuhuale/.trellis-wiki/Trellis/spec/
 ├── cli/
 │   ├── backend/
 │   │   ├── index.md
@@ -43,7 +45,7 @@ A common monorepo structure:
 
 ## Package Configuration
 
-`.trellis/config.yaml` can declare packages:
+`/Users/xuhuale/.trellis-wiki/Trellis/config.yaml` can declare packages:
 
 ```yaml
 packages:
@@ -58,21 +60,14 @@ default_package: cli
 The AI can run:
 
 ```bash
-python3 ./.trellis/scripts/get_context.py --mode packages
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/get_context.py --mode packages
 ```
 
-This command lists packages and spec layers for the current project. Use this output as the reference when configuring context JSONL.
+This command lists packages and spec layers for the current project. Use this output to identify the applicable guidelines for direct reading.
 
 ## How Specs Enter Tasks
 
-Before a task enters implementation, Phase 1.3 should write relevant specs into `implement.jsonl` / `check.jsonl`:
-
-```jsonl
-{"file": ".trellis/spec/cli/backend/index.md", "reason": "CLI backend conventions"}
-{"file": ".trellis/spec/cli/unit-test/conventions.md", "reason": "Test expectations"}
-```
-
-Sub-agents or platform preludes read these JSONL files and load the referenced specs. On platforms without sub-agent support, the AI should read the relevant specs directly according to the workflow.
+Before a task enters implementation, record essential spec and research references in the task artifacts. The current agent loads these files through `trellis-before-dev`, and re-reads applicable quality guidelines through `trellis-check`.
 
 ## What Specs Should Contain
 
@@ -85,18 +80,18 @@ Specs should contain executable engineering conventions for the project, not gen
 - Cases that require tests.
 - Project-specific pitfalls and how to avoid them.
 
-When the AI learns a new rule during implementation or debugging, it should update `.trellis/spec/` rather than only summarizing it in chat.
+When the AI learns a new rule during implementation or debugging, it should update `/Users/xuhuale/.trellis-wiki/Trellis/spec/` rather than only summarizing it in chat.
 
 ## Local Customization Points
 
 | Need | Edit location |
 | --- | --- |
-| Add a new spec layer | `.trellis/spec/<package>/<layer>/index.md` and corresponding guideline files. |
-| Change monorepo spec mapping | `packages` / `default_package` / `spec_scope` in `.trellis/config.yaml`. |
-| Change which specs AI reads before implementation | The task's `implement.jsonl`. |
-| Change which specs AI reads during checking | The task's `check.jsonl`. |
-| Change when specs should be updated | Phase 3.3 in `.trellis/workflow.md` and the `trellis-update-spec` skill. |
+| Add a new spec layer | `/Users/xuhuale/.trellis-wiki/Trellis/spec/<package>/<layer>/index.md` and corresponding guideline files. |
+| Change monorepo spec mapping | `packages` / `default_package` / `spec_scope` in `/Users/xuhuale/.trellis-wiki/Trellis/config.yaml`. |
+| Change which specs AI reads before implementation | Task artifact references and `trellis-before-dev`. |
+| Change which specs AI reads during checking | Task artifact references and `trellis-check`. |
+| Change when specs should be updated | Phase 3.3 in `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` and the `trellis-update-spec` skill. |
 
 ## Boundaries
 
-`.trellis/spec/` is the user's project specification, not a permanent copy of Trellis built-in templates. The AI should encourage the user to update it according to the actual project code instead of treating Trellis default templates as immutable documents.
+`/Users/xuhuale/.trellis-wiki/Trellis/spec/` is the user's project specification, not a permanent copy of Trellis built-in templates. The AI should encourage the user to update it according to the actual project code instead of treating Trellis default templates as immutable documents.

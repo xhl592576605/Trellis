@@ -3,6 +3,9 @@ name: trellis-brainstorm
 description: "Guides collaborative requirements discovery before implementation. Creates task directory, seeds PRD, asks high-value questions one at a time, researches technical choices, and converges on MVP scope. Use when requirements are unclear, there are multiple valid approaches, or the user describes a new feature or complex task."
 ---
 
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
+
 # Trellis Brainstorm
 
 ## Non-Negotiable Planning Contract
@@ -34,7 +37,7 @@ Use this skill only after task-creation consent has been given and the user is r
 If no task exists yet, create one:
 
 ```bash
-TASK_DIR=$(python3 ./.trellis/scripts/task.py create "<short task title>" --description "<one-line summary>" --slug <slug>)
+TASK_DIR=$(python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/task.py create "<short task title>" --description "<one-line summary>" --slug <slug>)
 ```
 
 Use a concise title from the user's request. Both the title and `--description` must be non-empty — `create` rejects blanks, and a record with either one empty is refused at archive. Use a slug without a date prefix. `task.py create` adds the `MM-DD-` directory prefix automatically.
@@ -167,7 +170,7 @@ The final planning summary must show Goal, In Scope, Out of Scope, Acceptance Cr
 
 Lightweight tasks may have only `prd.md`. Complex tasks must have `prd.md`, `design.md`, and `implement.md` before `task.py start`.
 
-The current agent loads task artifacts and applicable specs/research directly through `trellis-before-dev`.
+The current agent loads task artifacts, research, and applicable specs directly through `trellis-before-dev`; record essential references in the task documents.
 
 ## PRD Convergence Pass
 

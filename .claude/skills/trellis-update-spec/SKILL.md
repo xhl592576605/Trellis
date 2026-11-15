@@ -1,7 +1,10 @@
 ---
 name: trellis-update-spec
-description: "Captures executable contracts and coding conventions into .trellis/spec/ documents. Use when learning something valuable from debugging, implementing, or discussion that should be preserved for future sessions."
+description: "Captures executable contracts and coding conventions into /Users/xuhuale/.trellis-wiki/Trellis/spec/ documents. Use when learning something valuable from debugging, implementing, or discussion that should be preserved for future sessions."
 ---
+
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
 
 # Update Code-Spec - Capture Executable Contracts
 
@@ -60,7 +63,7 @@ For triggered tasks, include all sections below:
 ## Spec Structure Overview
 
 ```
-.trellis/spec/
+/Users/xuhuale/.trellis-wiki/Trellis/spec/
 ├── <layer>/           # Per-layer coding standards (e.g., backend/, frontend/, api/)
 │   ├── index.md       # Overview and links
 │   └── *.md           # Topic-specific guidelines
@@ -122,7 +125,7 @@ Before editing, read the current code-spec to:
 - Find the right section for your update
 
 ```bash
-cat .trellis/spec/<category>/<file>.md
+cat /Users/xuhuale/.trellis-wiki/Trellis/spec/<category>/<file>.md
 ```
 
 ### Step 4: Make the Update

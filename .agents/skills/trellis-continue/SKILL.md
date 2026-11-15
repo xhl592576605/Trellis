@@ -3,16 +3,19 @@ name: trellis-continue
 description: "Resume work on the current task. Loads the workflow Phase Index, figures out which phase/step to pick up at, then pulls the step-level detail via get_context.py --mode phase. Use when coming back to an in-progress task and you need to know what to do next."
 ---
 
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
+
 # Continue Current Task
 
-Resume work on the current task — pick up at the right phase/step in `.trellis/workflow.md`.
+Resume work on the current task — pick up at the right phase/step in `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`.
 
 ---
 
 ## Step 1: Load Current Context
 
 ```bash
-python3 ./.trellis/scripts/get_context.py
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/get_context.py
 ```
 
 Confirms: current task, git state, recent commits.
@@ -20,7 +23,7 @@ Confirms: current task, git state, recent commits.
 ## Step 2: Load the Phase Index
 
 ```bash
-python3 ./.trellis/scripts/get_context.py --mode phase
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/get_context.py --mode phase
 ```
 
 Shows the Phase Index (Plan / Execute / Finish) with routing + skill mapping.
@@ -37,7 +40,7 @@ Shows the Phase Index (Plan / Execute / Finish) with routing + skill mapping.
 - `status=in_progress` + check passed → **3.3** (spec update) → **3.4** (commit)
 - `status=completed` (rare; usually archived immediately) → archive flow
 
-Phase rules (full detail in `.trellis/workflow.md`):
+Phase rules (full detail in `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`):
 
 1. Run steps **in order** within a phase — `[required]` steps must not be skipped
 2. `[once]` steps are already done if the required output exists. `prd.md` alone can be enough only for lightweight tasks; complex tasks also need `design.md` and `implement.md`.
@@ -48,7 +51,7 @@ Phase rules (full detail in `.trellis/workflow.md`):
 Once you know which step to resume at:
 
 ```bash
-python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X> --platform codex
+python3 /Users/xuhuale/.trellis-wiki/Trellis/scripts/get_context.py --mode phase --step <X.X> --platform codex
 ```
 
 The current agent follows the loaded instructions directly. After each `[required]` step completes, move to the next.
@@ -57,4 +60,4 @@ The current agent follows the loaded instructions directly. After each `[require
 
 ## Reference
 
-Full workflow and detailed phase steps live in `.trellis/workflow.md`. This command is only an entry point — the canonical guidance is there.
+Full workflow and detailed phase steps live in `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md`. This command is only an entry point — the canonical guidance is there.

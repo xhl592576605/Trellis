@@ -1,22 +1,27 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { findCodeRoot as findStoreRoot, workflowDirOf as resolveStoreWorkflowDir, runtimeDirOf, renderWorkflowPaths } from "./external-store.js";
 import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, statSync, readSync } from "node:fs";
 import { join, dirname, basename, isAbsolute, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 
 // ---------------------------------------------------------------------------
 // Project root detection
 // ---------------------------------------------------------------------------
 
+// Root-config filename (the double-l is the user's explicit spelling).
+const CONF_FILENAME = ".treills.conf.json";
+
 function findProjectRoot(startDir: string): string | null {
-   let current = startDir;
-   while (true) {
-      if (existsSync(join(current, ".trellis"))) return current;
-      const parent = dirname(current);
-      if (parent === current) break;
-      current = parent;
-   }
-   return null;
+  return findStoreRoot(startDir);
+}
+
+// Workflow data dir for a code root: the external project dir when a root
+// config is present, else the legacy `<root>/.trellis`. Never resolved
+// through the in-project browse link.
+function workflowDir(projectRoot: string): string {
+  return resolveStoreWorkflowDir(projectRoot);
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +129,7 @@ function parseChannelTrustSection(content: string): { trustedDirs: string[]; aut
 }
 
 function resolveTrustedRoots(projectRoot: string): string[] {
-   const configPath = join(projectRoot, ".trellis", "config.yaml");
+   const configPath = join(workflowDir(projectRoot), "config.yaml");
    let config: { trustedDirs: string[]; autoTrustSymlinks?: boolean } = { trustedDirs: [] };
    if (existsSync(configPath)) {
       try {
@@ -135,6 +140,15 @@ function resolveTrustedRoots(projectRoot: string): string[] {
    }
 
    const roots: string[] = [];
+   // External storage mode: the bound workflow dir is a trusted root by
+   // definition (the config is the verified binding); no symlink needed.
+   if (existsSync(join(projectRoot, CONF_FILENAME))) {
+      try {
+         roots.push(realpathSync(workflowDir(projectRoot)));
+      } catch {
+         // Unresolvable workflow dir — config validation reports elsewhere.
+      }
+   }
    for (const entry of config.trustedDirs) {
       try {
          roots.push(realpathSync(resolve(projectRoot, entry)));
@@ -145,7 +159,7 @@ function resolveTrustedRoots(projectRoot: string): string[] {
 
    if (config.autoTrustSymlinks !== false) {
       for (const entryName of AUTO_TRUST_ENTRIES) {
-         const entryPath = join(projectRoot, ".trellis", entryName);
+         const entryPath = join(workflowDir(projectRoot), entryName);
          try {
             if (lstatSync(entryPath).isSymbolicLink()) {
                roots.push(realpathSync(entryPath));
@@ -203,7 +217,7 @@ function resolveActiveTaskStatus(
    projectRoot: string,
    contextKey: string | null,
 ): { status: string; taskDir: string | null; taskTitle: string | null } {
-   const sessionsDir = join(projectRoot, ".trellis", ".runtime", "sessions");
+   const sessionsDir = join(runtimeDirOf(projectRoot), "sessions");
    if (!existsSync(sessionsDir)) return { status: "no_task", taskDir: null, taskTitle: null };
 
    // --- 通过 context key 解析 session 文件 ---
@@ -274,7 +288,7 @@ function resolveActiveTaskStatus(
 const SESSION_CONTEXT_TIMEOUT_MS = 5000;
 
 function buildSessionContext(projectRoot: string, contextKey: string | null): string {
-   const script = join(projectRoot, ".trellis", "scripts", "get_context.py");
+   const script = join(workflowDir(projectRoot), "scripts", "get_context.py");
    if (!existsSync(script)) return "";
 
    try {
@@ -300,46 +314,15 @@ function buildSessionContext(projectRoot: string, contextKey: string | null): st
 // Task context — prd.md, info.md, and jsonl-referenced spec/research files
 // ---------------------------------------------------------------------------
 
-type AgentType = "trellis-implement" | "trellis-check" | "trellis-research" | null;
-
-function taskContextJsonlNames(agentType?: AgentType): string[] {
-   if (agentType === "trellis-implement") return ["implement.jsonl"];
-   if (agentType === "trellis-check") return ["check.jsonl"];
-   if (agentType === "trellis-research") return [];
-   return ["implement.jsonl", "check.jsonl"];
+function taskContextInputPaths(projectRoot: string, taskDir: string): string[] {
+   return [
+      join(workflowDir(projectRoot), "config.yaml"),
+      ...["prd.md", "design.md", "implement.md", "info.md"].map((name) => join(taskDir, name)),
+   ];
 }
 
-function taskContextInputPaths(projectRoot: string, taskDir: string, agentType?: AgentType): string[] {
-   const trustedRoots = resolveTrustedRoots(projectRoot);
-   const paths = new Set<string>([
-      join(projectRoot, ".trellis", "config.yaml"),
-      join(taskDir, "prd.md"),
-      join(taskDir, "info.md"),
-   ]);
-   for (const jsonlName of taskContextJsonlNames(agentType)) {
-      const jsonlPath = join(taskDir, jsonlName);
-      paths.add(jsonlPath);
-      if (!existsSync(jsonlPath)) continue;
-      const displayPath = displayProjectPath(projectRoot, jsonlPath, taskDir);
-      const { lines } = readJsonlLines(jsonlPath, displayPath);
-      for (const line of lines) {
-         try {
-            const row = JSON.parse(line.trim()) as Record<string, unknown>;
-            const file = typeof row.file === "string" ? row.file.trim() : "";
-            const candidatePath = file ? resolve(projectRoot, file) : "";
-            if (candidatePath && isInsideRoot(resolve(projectRoot), candidatePath)) paths.add(candidatePath);
-            const targetPath = file ? resolveProjectFile(projectRoot, file, trustedRoots) : null;
-            if (targetPath) paths.add(targetPath);
-         } catch {
-            // Seed rows and malformed lines do not contribute referenced files.
-         }
-      }
-   }
-   return [...paths];
-}
-
-function taskContextSignature(projectRoot: string, taskDir: string, agentType?: AgentType): string {
-   return taskContextInputPaths(projectRoot, taskDir, agentType).map((filePath) => {
+function taskContextSignature(projectRoot: string, taskDir: string): string {
+   return taskContextInputPaths(projectRoot, taskDir).map((filePath) => {
       try {
          const stat = statSync(filePath);
          return `${filePath}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
@@ -360,7 +343,7 @@ const DEFAULT_CONTEXT_INJECTION_LIMITS: ContextInjectionLimits = {
    max_artifact_bytes: 65536,
    max_total_bytes: 131072,
 };
-const MAX_JSONL_BYTES = 1024 * 1024;
+
 
 function stripInlineComment(value: string): string {
    let quote: string | null = null;
@@ -391,7 +374,7 @@ function unquoteYaml(value: string): string {
 function readContextInjectionLimits(projectRoot: string): ContextInjectionLimits {
    const limits = { ...DEFAULT_CONTEXT_INJECTION_LIMITS };
    let config = "";
-   try { config = readFileSync(join(projectRoot, ".trellis", "config.yaml"), "utf-8"); } catch { return limits; }
+   try { config = readFileSync(join(workflowDir(projectRoot), "config.yaml"), "utf-8"); } catch { return limits; }
 
    let inSection = false;
    let sectionIndent = -1;
@@ -520,9 +503,7 @@ function truncateUtf8(data: Buffer, cap: number): Buffer {
    return Buffer.alloc(0);
 }
 
-function isUtf8(data: Buffer): boolean {
-   return utf8Status(data) === "valid";
-}
+
 
 function readFilePrefix(filePath: string, maxBytes: number): { data: Buffer; size: number } | null {
    let fd: number | null = null;
@@ -594,36 +575,8 @@ function materialize(
    };
 }
 
-function readJsonlLines(jsonlPath: string, displayPath: string): { lines: string[]; omitted: string | null } {
-   let fd: number | null = null;
-   try {
-      fd = openSync(jsonlPath, "r");
-      const data = Buffer.allocUnsafe(MAX_JSONL_BYTES + 1);
-      const bytesRead = readFully(fd, data);
-      const size = fstatSync(fd).size;
-      if (bytesRead > MAX_JSONL_BYTES || size > MAX_JSONL_BYTES) {
-         return {
-            lines: [],
-            omitted: omittedNotice(displayPath, size, `manifest exceeds ${MAX_JSONL_BYTES} byte parse limit`),
-         };
-      }
-      const content = data.subarray(0, bytesRead);
-      if (!isUtf8(content)) {
-         return { lines: [], omitted: omittedNotice(displayPath, size, "manifest is not valid UTF-8") };
-      }
-      return { lines: content.toString("utf-8").split(/\r?\n/), omitted: null };
-   } catch {
-      return { lines: [], omitted: omittedNotice(displayPath, null, "manifest is missing or unreadable") };
-   } finally {
-      if (fd !== null) closeSync(fd);
-   }
-}
-
-function buildTaskContext(projectRoot: string, taskDir: string, agentType?: AgentType): string {
+function buildTaskContext(projectRoot: string, taskDir: string): string {
    const parts: string[] = [];
-   // Resolved once per call (not per referenced file) — avoids re-parsing
-   // config.yaml for every jsonl row.
-   const trustedRoots = resolveTrustedRoots(projectRoot);
    const limits = readContextInjectionLimits(projectRoot);
    const prefix = "<task-context>\nContext is bounded by .trellis/config.yaml. Files marked [truncated] or [omitted] remain authoritative on disk; use their required_read path before relying on missing detail.\n\n";
    const suffix = "\n</task-context>";
@@ -640,69 +593,25 @@ function buildTaskContext(projectRoot: string, taskDir: string, agentType?: Agen
       if (output !== null) parts.push(output);
    };
 
-   // prd.md and info.md — always included
+   // Task artifacts are read directly by the current agent.
    const prdPath = join(taskDir, "prd.md");
    const relativePrdPath = displayProjectPath(projectRoot, prdPath, taskDir);
    if (existsSync(prdPath)) {
       const artifact = materialize(prdPath, relativePrdPath, "Requirements document", limits.max_artifact_bytes, "artifact");
       appendCandidate(artifact.block, artifact.notice);
    }
+   for (const name of ["design.md", "implement.md"]) {
+      const artifactPath = join(taskDir, name);
+      if (existsSync(artifactPath)) {
+         const artifact = materialize(artifactPath, displayProjectPath(projectRoot, artifactPath, taskDir), name, limits.max_artifact_bytes, "artifact");
+         appendCandidate(artifact.block, artifact.notice);
+      }
+   }
    const infoPath = join(taskDir, "info.md");
    const relativeInfoPath = displayProjectPath(projectRoot, infoPath, taskDir);
    if (existsSync(infoPath)) {
       const artifact = materialize(infoPath, relativeInfoPath, "Task information", limits.max_artifact_bytes, "artifact");
       appendCandidate(artifact.block, artifact.notice);
-   }
-
-   // Determine which jsonl files to read based on agent type
-   const jsonlNames = taskContextJsonlNames(agentType);
-
-   // A file may be referenced by both manifests. Use the resolved real path so
-   // relative aliases and symlinked paths cannot consume the context budget twice.
-   const includedPaths = new Set<string>();
-
-   for (const jsonlName of jsonlNames) {
-      const jsonlPath = join(taskDir, jsonlName);
-      if (!existsSync(jsonlPath)) continue;
-
-      const relativeJsonlPath = displayProjectPath(projectRoot, jsonlPath, taskDir);
-      const manifest = readJsonlLines(jsonlPath, relativeJsonlPath);
-      if (manifest.omitted) {
-         appendCandidate(`## ${jsonlName}\n\n${manifest.omitted}`);
-         continue;
-      }
-
-      const fileChunks: string[] = [];
-      let sectionHeaderEmitted = false;
-      for (const line of manifest.lines) {
-         const trimmed = line.trim();
-         if (!trimmed) continue;
-         try {
-            const row = JSON.parse(trimmed) as Record<string, unknown>;
-            const file = typeof row.file === "string" ? row.file.trim() : "";
-            if (!file) continue;
-            const targetPath = resolveProjectFile(projectRoot, file, trustedRoots);
-            if (!targetPath) continue;
-            if (includedPaths.has(targetPath)) continue;
-            includedPaths.add(targetPath);
-            const materialized = materialize(targetPath, file, typeof row.reason === "string" ? row.reason : "-", limits.max_file_bytes, "file");
-            const sectionPrefix = sectionHeaderEmitted
-               ? "\n\n---\n\n"
-               : `${parts.length > 0 ? "\n\n" : ""}## ${jsonlName}\n\n`;
-            const output = budget.emitCandidate(
-               materialized.block === null ? null : `${sectionPrefix}${materialized.block}`,
-               `${sectionPrefix}${materialized.notice}`,
-            );
-            if (output !== null) {
-               fileChunks.push(output);
-               sectionHeaderEmitted = true;
-            }
-         } catch {
-            // seed rows and malformed lines are non-fatal
-         }
-      }
-
-      if (fileChunks.length > 0) parts.push(fileChunks.join(""));
    }
 
    if (parts.length === 0) return "";
@@ -740,7 +649,7 @@ function isYamlNonStringScalar(raw: string): boolean {
 
 function readPromptInjectionSkipKeyword(projectRoot: string): string {
    let config = "";
-   try { config = readFileSync(join(projectRoot, ".trellis", "config.yaml"), "utf-8"); } catch { return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD; }
+   try { config = readFileSync(join(workflowDir(projectRoot), "config.yaml"), "utf-8"); } catch { return DEFAULT_PROMPT_INJECTION_SKIP_KEYWORD; }
 
    let inSection = false;
    let sectionIndent = -1;
@@ -820,7 +729,7 @@ class TurnContextCache {
 
       const { status } = resolveActiveTaskStatus(projectRoot, contextKey);
 
-      const workflowPath = join(projectRoot, ".trellis", "workflow.md");
+      const workflowPath = join(workflowDir(projectRoot), "workflow.md");
       let workflowMd = "";
       try { workflowMd = readFileSync(workflowPath, "utf-8"); } catch { }
 
@@ -841,6 +750,9 @@ class TurnContextCache {
          ? ""
          : `<workflow-state>\n${workflowBody}\n</workflow-state>\n\n<session-overview>\n${SESSION_OVERVIEW_TEXT}\n</session-overview>`;
 
+      if (existsSync(join(projectRoot, CONF_FILENAME))) {
+         this.workflowMsg = renderWorkflowPaths(this.workflowMsg, workflowDir(projectRoot));
+      }
       this.key = cacheKey;
       this.timestamp = now;
       return { workflowMsg: this.workflowMsg };
@@ -870,24 +782,9 @@ function parseWorkflowStateBlocks(markdown: string): WorkflowStateBlock[] {
    return blocks;
 }
 
-// ---------------------------------------------------------------------------
-// Sub-agent detection
-// ---------------------------------------------------------------------------
-
-const TRELLIS_AGENTS = new Set(["trellis-implement", "trellis-check", "trellis-research"]);
-
-function detectAgentType(): AgentType {
-   const blocked = process.env.PI_BLOCKED_AGENT;
-   if (blocked && TRELLIS_AGENTS.has(blocked)) {
-      return blocked as AgentType;
-   }
-   return null;
-}
-
 interface TaskContextCache {
    projectRoot: string;
    taskDir: string;
-   agentType: AgentType;
    signature: string;
    content: string;
 }
@@ -899,8 +796,6 @@ interface TaskContextCache {
 export default function(pi: ExtensionAPI): void {
    let projectRoot: string | null = null;
    const turnCache = new TurnContextCache();
-   const agentType = detectAgentType();
-   const isSubAgent = agentType !== null;
    let taskContextCache: TaskContextCache | null = null;
 
    // Tracks compaction boundaries — context handler skips scanning when no
@@ -915,12 +810,12 @@ export default function(pi: ExtensionAPI): void {
    };
 
    const getTaskContext = (taskDir: string, root: string): string => {
-      const signature = taskContextSignature(root, taskDir, agentType);
-      if (taskContextCache?.projectRoot === root && taskContextCache.taskDir === taskDir && taskContextCache.agentType === agentType && taskContextCache.signature === signature) {
+      const signature = taskContextSignature(root, taskDir);
+      if (taskContextCache?.projectRoot === root && taskContextCache.taskDir === taskDir && taskContextCache.signature === signature) {
          return taskContextCache.content;
       }
-      const content = buildTaskContext(root, taskDir, agentType);
-      taskContextCache = { projectRoot: root, taskDir, agentType, signature, content };
+      const content = buildTaskContext(root, taskDir);
+      taskContextCache = { projectRoot: root, taskDir, signature, content };
       return content;
    };
 
@@ -930,20 +825,6 @@ export default function(pi: ExtensionAPI): void {
 
       if (!projectRoot) return;
 
-      if (isSubAgent) {
-         // Sub-agent: inject precise task context once
-         const { taskDir } = resolveActiveTaskStatus(projectRoot, contextKey);
-         if (taskDir) {
-            const taskContext = getTaskContext(taskDir, projectRoot);
-            if (taskContext) {
-               await pi.sendMessage({
-                  customType: "trellis-task-context",
-                  content: taskContext,
-                  display: false,
-               });
-            }
-         }
-      } else {
          // Main session: inject session context (global map) + task context
          const sessionContext = buildSessionContext(projectRoot, contextKey);
          if (sessionContext) {
@@ -967,7 +848,6 @@ export default function(pi: ExtensionAPI): void {
          }
 
          ctx.ui.notify("Trellis workflow system available", "info");
-      }
    });
 
    pi.on("session_before_compact", async () => {

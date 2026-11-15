@@ -3,6 +3,9 @@ name: trellis-session-insight
 description: "Reach into past AI conversation history through the `trellis mem` CLI. Use whenever the user asks 'how did we solve X last time', 'have we discussed this before', 'what was the decision on X', 'remind me what we did in this task', '上次怎么解的', '之前讨论过吗', '想起一段对话', or when starting a brainstorm that overlaps prior work, debugging a familiar bug, continuing a task across sessions, or doing a finish-work review. Returns raw past dialogue; decide for the moment whether to update spec, append to task notes, quote inline in the answer, or just internalize."
 ---
 
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
+
 # Trellis Session Insight
 
 This skill teaches an AI **how to call `trellis mem`** — the project's cross-session memory feedstock — and **when reaching for it is the right move**.
@@ -42,7 +45,7 @@ Treat the output as **raw material**, not a deliverable. Once you have it, decid
 - **Quote inline in your reply** if a specific past exchange answers the user's current question — and cite the session-id / phase so the user can verify.
 - **Update `<task>/prd.md` or `<task>/design.md`** if `mem` surfaced a load-bearing decision that should have been written down but wasn't. Surface the proposed edit to the user first.
 - **Append to a task-local notes file** (e.g. `<task>/notes.md` or extending an existing one) if the finding belongs to the current task's record but doesn't fit the PRD.
-- **Update `.trellis/spec/`** if the finding is a project-wide convention or gotcha that would help future tasks. Run the `trellis-update-spec` skill for that — `session-insight` ends at the discovery.
+- **Update `/Users/xuhuale/.trellis-wiki/Trellis/spec/`** if the finding is a project-wide convention or gotcha that would help future tasks. Run the `trellis-update-spec` skill for that — `session-insight` ends at the discovery.
 - **Just absorb it** for the next few turns and answer better, without writing anything. This is often the right move for one-off recall.
 
 Trellis does not prescribe a single destination. Forcing every recall into a fixed file makes the file grow into noise. Let the situation decide.

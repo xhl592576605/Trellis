@@ -3,6 +3,9 @@ name: trellis-break-loop
 description: "Deep bug analysis to break the fix-forget-repeat cycle. Analyzes root cause category, why fixes failed, prevention mechanisms, and captures knowledge into specs. Use after fixing a bug to prevent the same class of bugs."
 ---
 
+Before executing Trellis commands, read .treills.conf.json in the current code checkout. Resolve storage/project (expanding ~) and use that project's real scripts and data paths. Keep command cwd in this checkout. The .trellis browse link is optional. If the locator changed since installation, resolve the current paths before using the examples below.
+
+
 # Break the Loop - Deep Bug Analysis
 
 When debug is complete, use this for deep analysis to break the "fix bug -> forget -> repeat" cycle.
@@ -60,8 +63,8 @@ What broader problems does this bug reveal?
 
 Solidify insights into the system:
 
-- [ ] Update `.trellis/spec/guides/` thinking guides
-- [ ] Update relevant `.trellis/spec/` docs
+- [ ] Update `/Users/xuhuale/.trellis-wiki/Trellis/spec/guides/` thinking guides
+- [ ] Update relevant `/Users/xuhuale/.trellis-wiki/Trellis/spec/` docs
 - [ ] Create issue record (if applicable)
 - [ ] Create feature ticket for root fix
 - [ ] Update check guidelines if needed
@@ -111,6 +114,64 @@ Three levels of insight:
 
 30 minutes of analysis saves 30 hours of future debugging.
 
+## Thinking Framework: Bayesian Reasoning
+
+When multiple root causes are plausible and evidence is incomplete, update your beliefs proportionally to new evidence rather than clinging to initial assumptions.
+
+### Step 1: Establish Priors
+
+Before investigating, state what you believe and why:
+
+| Hypothesis | Prior | Reasoning |
+|------------|-------|-----------|
+| H1: [cause A] | 40% | Most common for this pattern |
+| H2: [cause B] | 30% | Plausible given environment |
+| H3: [other] | 30% | Catch-all |
+
+Priors must sum to 100%. If you can't assign probabilities, investigate first.
+
+### Step 2: Observe Evidence
+
+Document what you found — be specific about reliability:
+
+- What exactly did you observe?
+- How reliable? (test output > log message > user report > hunch)
+- Could multiple hypotheses explain this?
+
+### Step 3: Update Beliefs
+
+For each hypothesis, ask: **How likely is this evidence if this hypothesis were true?**
+
+Direction of update matters more than calculation:
+- Evidence strongly predicted by H1 → H1 probability increases
+- Evidence contradicts H2 → H2 probability decreases
+- Evidence equally likely under all → no update
+
+### Step 4: Seek Discriminating Evidence
+
+Don't gather more of the same. Find evidence that **differs strongly** between top hypotheses.
+
+> If H1 and H3 are close: "What would I see if H1 is true but not if H3 is true?" Then check for that.
+
+### Step 5: State Confidence
+
+| Confidence | Action |
+|------------|--------|
+| 90%+ | Proceed with fix, monitor |
+| 70-90% | Proceed, add fallback check |
+| 50-70% | Test hypothesis before committing |
+| <50% | Need more evidence, don't guess |
+
+Never express binary certainty when evidence is incomplete. Use "most likely", "plausible but unlikely", "worth investigating".
+
+### Common Fallacies
+
+| Fallacy | Example | Correction |
+|---------|---------|------------|
+| **Base rate neglect** | "Test failed → code is broken" | How often do tests fail for other reasons? |
+| **Confirmation bias** | "Must be a race condition, let me find race evidence" | Actively seek evidence AGAINST your top hypothesis |
+| **Anchoring** | "Last time it was caching, probably caching again" | Establish priors from current context, not yesterday's bug |
+
 ---
 
 ## After Analysis: Immediate Actions
@@ -123,7 +184,7 @@ Three levels of insight:
    - If it's a code reuse issue → update `code-reuse-thinking-guide.md`
    - If it's domain-specific → update `backend/*.md` or `frontend/*.md`
 
-2. **Sync templates** - After updating `.trellis/spec/`, sync to `src/templates/markdown/spec/`
+2. **Sync templates** - After updating `/Users/xuhuale/.trellis-wiki/Trellis/spec/`, sync to `src/templates/markdown/spec/`
 
 3. **Commit the spec updates** - This is the primary output, not just the analysis text
 
