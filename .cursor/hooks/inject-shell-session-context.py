@@ -36,11 +36,6 @@ DIR_WORKFLOW = ".trellis"
 DIR_RUNTIME = ".runtime"
 DIR_SHELL_TICKETS = "shell-tickets"
 # Root-config filename (the double-l is the user's explicit spelling).
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from common.external_store import load_store
-
 #!/usr/bin/env python3
 """External store resolution from the project-root config file.
 
