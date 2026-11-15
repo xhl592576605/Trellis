@@ -1,0 +1,9 @@
+{
+  "version": "0.0.0-stage",
+  "description": "Package-name reservation placeholder published during the trellis-wiki rebrand; not a usable release",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "Name-reservation placeholder for the `trellis-wiki` / `trellis-wiki-core` npm package names during the fork rebrand. Contains no functional CLI; no user should be on this version. The first real release on this package name is 0.7.0.",
+  "migrations": [],
+  "notes": "Documentation-only manifest authored after the fact so the release-manifest chain stays continuous with npm (check-manifest-continuity). No migrations."
+}

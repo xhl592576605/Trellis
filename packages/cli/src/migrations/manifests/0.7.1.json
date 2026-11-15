@@ -1,0 +1,9 @@
+{
+  "version": "0.7.1",
+  "description": "Project-scoped storage commit messages; migration skips OS junk files; include-path accepts in-project absolute paths",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Enhancements:**\n- Storage-repo commit subjects now carry the project as a conventional scope — `chore(<project>): record journal`, `chore(<project>): archive task <name>`, `chore(<project>): import external workflow data` — so the shared `~/.trellis-wiki` log names its owner. A custom `session_commit_message` keeps any explicit scope; unscoped conventional messages get the project scope injected automatically.\n\n**Bug Fixes:**\n- `trellis update --migrate-storage` skips OS junk files (`.DS_Store`, `Thumbs.db`) across copy, digest, verification and product-file enumeration, and reports the skipped count. Previously a global gitignore ignoring `.DS_Store` made the import's `git add` fail deterministically with a misleading \"Git identity/hooks/locks\" error.\n- `add_session.py --include-path` accepts absolute paths inside the project's data directory — the form platform docs receive after template rendering — and all ref validation now runs before any journal write, so argument errors no longer leave a half-recorded session behind.",
+  "migrations": [],
+  "notes": "Patch release. No file migrations required; existing projects pick up the new commit-message scope after `trellis-wiki update` refreshes their scripts."
+}
