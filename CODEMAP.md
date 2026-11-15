@@ -14,7 +14,7 @@ Trellis/
 │   ├── src/configurators/         # 各 AI 平台接入；collectTemplates 是文件清单唯一来源
 │   ├── src/templates/             # 分发模板（trellis 脚本、common skills、各平台目录）
 │   │   └── trellis/scripts/       # 随项目安装的 Python（与外部存储 scripts 保持孪生一致）
-│   ├── src/migrations/manifests/  # 版本迁移链（0.7.0 = 外部存储 breaking；0.7.2 = 普通更新自动提交）
+│   ├── src/migrations/manifests/  # 版本迁移链（0.7.0 = 外部存储 breaking；0.7.2/0.7.3 = 普通更新自动提交及 CI 发布修复）
 │   ├── scripts/                   # 发布与预检（release.js、release-preflight、check-release-manifest）
 │   ├── dist/                      # CLI 构建产物与复制后的分发模板（勿手改）
 │   └── test/                      # vitest（含市场一致性回归）

@@ -48,6 +48,11 @@ describe.skipIf(process.platform === "win32")(
     let previousCwd: string;
 
     beforeEach(() => {
+      // Both the checkout and external storage commits need an isolated identity.
+      for (const role of ["AUTHOR", "COMMITTER"]) {
+        vi.stubEnv(`GIT_${role}_NAME`, "Workflow Test");
+        vi.stubEnv(`GIT_${role}_EMAIL`, "workflow@example.com");
+      }
       previousCwd = process.cwd();
       base = fs.mkdtempSync(
         path.join(fs.realpathSync(os.tmpdir()), "trellis-workflow-"),
@@ -82,6 +87,7 @@ describe.skipIf(process.platform === "win32")(
       process.chdir(previousCwd);
       vi.restoreAllMocks();
       vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
       fs.rmSync(base, { recursive: true, force: true });
     });
 

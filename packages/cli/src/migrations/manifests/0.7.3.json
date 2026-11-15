@@ -1,0 +1,9 @@
+{
+  "version": "0.7.3",
+  "description": "Release external wiki update commits with isolated CI Git identities",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Bug Fixes:**\n- Release the ordinary external wiki update commits and npm visibility retries described in 0.7.2. The 0.7.2 CI run stopped before uploading either package because an existing worktree integration fixture lacked an external-storage Git identity.\n- Give the cross-worktree test fixture an isolated author/committer identity for both repositories so release tests do not depend on developer-global Git configuration.",
+  "migrations": [],
+  "notes": "0.7.2 was tagged but not published. Runtime changes are unchanged from 0.7.2; this patch fixes the CI fixture and publishes both packages together."
+}
