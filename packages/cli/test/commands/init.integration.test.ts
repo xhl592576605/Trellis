@@ -113,7 +113,7 @@ describe("init() legacy-layout integration", () => {
     expect(fs.existsSync(path.join(tmpDir, ".kimi-code"))).toBe(false);
 
     // Root files
-    expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(false);
 
     // Built-in multi-file skills are installed for default platforms.
     expect(
@@ -988,11 +988,7 @@ describe("init() legacy-layout integration", () => {
       hashes?: Record<string, string>;
     };
     const hashes = hashesFile.hashes ?? {};
-    const agentsContent = fs.readFileSync(
-      path.join(tmpDir, FILE_NAMES.AGENTS),
-      "utf-8",
-    );
-    expect(hashes[FILE_NAMES.AGENTS]).toBe(computeHash(agentsContent));
+    expect(hashes).not.toHaveProperty(FILE_NAMES.AGENTS);
     expect(Object.keys(hashes).length).toBeGreaterThan(0);
   });
 

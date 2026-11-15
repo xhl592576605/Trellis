@@ -24,8 +24,6 @@ function readLocalTemplate(filename: string): string {
 // Root files for new projects
 // =============================================================================
 
-export const agentsMdContent: string = readLocalTemplate("agents.md");
-
 // Workspace index template (developer work records)
 export const workspaceIndexContent: string =
   readLocalTemplate("workspace-index.md");

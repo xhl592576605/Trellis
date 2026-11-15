@@ -104,11 +104,6 @@ This notice is one-shot: do not repeat it after the first visible assistant repl
 
 
 # Root-config filename (the double-l is the user's explicit spelling).
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from common.external_store import load_store, render_workflow_paths
-
 #!/usr/bin/env python3
 """External store resolution from the project-root config file.
 
@@ -802,6 +797,8 @@ def main() -> None:
     code_root, trellis_dir = _resolve_trellis_dir(project_dir)
     spec_index_paths = _collect_spec_index_paths(trellis_dir)
 
+    from common.session_context import get_trellis_instructions  # type: ignore[import-not-found]
+
     output = StringIO()
 
     output.write("""<session-context>
@@ -812,6 +809,8 @@ Trellis compact SessionStart context. Use it to orient the session; load details
     output.write(FIRST_REPLY_NOTICE)
     output.write("\n\n")
 
+    output.write(get_trellis_instructions(code_root))
+    output.write("\n\n")
     output.write("<current-state>\n")
     output.write(
         _build_compact_current_state(code_root, trellis_dir, hook_input, spec_index_paths)

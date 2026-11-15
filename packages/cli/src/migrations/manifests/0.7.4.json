@@ -1,0 +1,9 @@
+{
+  "version": "0.7.4",
+  "description": "Inject Trellis project instructions at runtime instead of writing external wiki paths into AGENTS.md",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Enhancements:**\n- Deliver Trellis workflow, spec, workspace and task navigation through existing SessionStart hooks, extensions, plugins and manual startup context, resolving paths from the current checkout locator.\n\n**Bug Fixes:**\n- Stop creating or appending Trellis-managed AGENTS.md content. Ordinary update removes complete legacy managed blocks while preserving all surrounding user text and respecting backups, conflict decisions and update.skip. Successful cleanup retires the AGENTS.md receipt; skipped cleanups remain retryable.\n- Align init and update rendering of external workflow and runtime-agent documents so a fresh installation immediately passes update --dry-run without template churn.\n- Remove template-only external-store typing imports when generating standalone Python hooks so inlined store types are not redeclared.",
+  "migrations": [],
+  "notes": "No data migration is required for external wiki projects. Platforms without startup hooks continue to use existing Trellis skills/commands. Malformed blocks and instruction-file symlinks are preserved. Other generated skill/command path rendering is unchanged."
+}

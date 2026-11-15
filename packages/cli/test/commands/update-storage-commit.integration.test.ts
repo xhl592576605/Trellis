@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { init } from "../../src/commands/init.js";
 import { update } from "../../src/commands/update.js";
 import { VERSION } from "../../src/constants/version.js";
+import { runtimeDirOf } from "../../src/utils/external-store.js";
 import {
   computeHash,
   loadHashes,
@@ -131,6 +132,9 @@ describe.skipIf(process.platform === "win32")(
     );
 
     it("commits a version-only update on the early-return path", async () => {
+      // The checkout receipt is authoritative; both stamps must model the old install.
+      // Previous init/update template churn accidentally masked this fixture gap.
+      fs.writeFileSync(path.join(runtimeDirOf(code), ".version"), "0.7.0");
       fs.writeFileSync(path.join(project, ".version"), "0.7.0");
       git(storage, "add", "--", "演示 project/.version");
       git(storage, "commit", "-qm", "old version");

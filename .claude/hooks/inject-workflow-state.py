@@ -81,11 +81,6 @@ If you have not already loaded Trellis context this session, read the `trellis-s
 # ---------------------------------------------------------------------------
 
 # Root-config filename (the double-l is the user's explicit spelling).
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from common.external_store import load_store, render_workflow_paths
-
 #!/usr/bin/env python3
 """External store resolution from the project-root config file.
 

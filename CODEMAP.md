@@ -13,11 +13,13 @@ Trellis/
 │   ├── src/utils/storage-update.ts # 普通 update 与存储迁移共用的产品快照、精确提交及失败恢复
 │   ├── src/configurators/         # 各 AI 平台接入；collectTemplates 是文件清单唯一来源
 │   ├── src/templates/             # 分发模板（trellis 脚本、common skills、各平台目录）
-│   │   └── trellis/scripts/       # 随项目安装的 Python（与外部存储 scripts 保持孪生一致）
-│   ├── src/migrations/manifests/  # 版本迁移链（0.7.0 = 外部存储 breaking；0.7.2/0.7.3 = 普通更新自动提交及 CI 发布修复）
+│   │   └── trellis/scripts/       # 随项目安装的 Python（与外部存储 scripts 保持孪生一致；会话动态注入 wiki 导航）
+│   ├── src/migrations/manifests/  # 版本迁移链（0.7.0 = 外部存储；0.7.4 = 动态导航与旧 AGENTS.md 托管退出）
 │   ├── scripts/                   # 发布与预检（release.js、release-preflight、check-release-manifest）
 │   ├── dist/                      # CLI 构建产物与复制后的分发模板（勿手改）
 │   └── test/                      # vitest（含市场一致性回归）
+│       ├── fixtures/legacy-agents.md # 旧版 AGENTS.md 兼容夹具，不再作为生产模板分发
+│       ├── utils/managed-paths.test.ts # 旧托管块精确清理与歧义标记保护
 │       ├── commands/update-storage-commit.integration.test.ts # 外部更新提交、隔离与失败恢复
 │       └── scripts/release-preflight.test.ts # npm 处理延迟与版本/tag 重试
 ├── packages/core/                 # trellis-wiki-core SDK

@@ -34,8 +34,16 @@ vi.mock("node:child_process", () => ({
 import { initLegacy as init } from "../helpers/legacy-init.js";
 import { uninstall } from "../../src/commands/uninstall.js";
 import { update } from "../../src/commands/update.js";
-import { loadHashes, saveHashes } from "../../src/utils/template-hash.js";
-import { agentsMdContent } from "../../src/templates/markdown/index.js";
+import {
+  computeHash,
+  loadHashes,
+  saveHashes,
+} from "../../src/utils/template-hash.js";
+
+const agentsMdContent = fs.readFileSync(
+  path.resolve(__dirname, "../fixtures/legacy-agents.md"),
+  "utf8",
+);
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 const noop = () => {};
@@ -173,7 +181,12 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     // file and take the user content with it.
     await init({ yes: true, claude: true, force: true });
     const agentsPath = path.join(tmpDir, "AGENTS.md");
-    // Sanity: Trellis tracked it and wrote the managed block.
+    // Simulate an older installation; new init no longer owns AGENTS.md.
+    fs.writeFileSync(agentsPath, agentsMdContent);
+    saveHashes(tmpDir, {
+      ...loadHashes(tmpDir),
+      "AGENTS.md": computeHash(agentsMdContent),
+    });
     expect(loadHashes(tmpDir)).toHaveProperty("AGENTS.md");
     const written = fs.readFileSync(agentsPath, "utf-8");
     expect(written).toContain("<!-- TRELLIS:START -->");
@@ -196,7 +209,11 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     // nothing user-authored remains and the file is removed.
     await init({ yes: true, claude: true, force: true });
     const agentsPath = path.join(tmpDir, "AGENTS.md");
-    expect(fs.existsSync(agentsPath)).toBe(true);
+    fs.writeFileSync(agentsPath, agentsMdContent);
+    saveHashes(tmpDir, {
+      ...loadHashes(tmpDir),
+      "AGENTS.md": computeHash(agentsMdContent),
+    });
 
     await uninstall({ yes: true });
 
@@ -225,9 +242,7 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     await update({});
 
     // The orphan entry is silently pruned; user file is untouched.
-    expect(loadHashes(tmpDir)).not.toHaveProperty(
-      ".codex/sessions/user.jsonl",
-    );
+    expect(loadHashes(tmpDir)).not.toHaveProperty(".codex/sessions/user.jsonl");
     expect(fs.existsSync(userFile)).toBe(true);
   });
 
@@ -326,11 +341,11 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     try {
       vi.spyOn(process, "cwd").mockReturnValue(fakeHome);
 
-      const exitSpy = vi
-        .spyOn(process, "exit")
-        .mockImplementation(((code?: number) => {
-          throw new Error(`process.exit(${code ?? 0})`);
-        }) as never);
+      const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+        code?: number,
+      ) => {
+        throw new Error(`process.exit(${code ?? 0})`);
+      }) as never);
 
       await withFakeHome(fakeHome, async () => {
         await expect(init({ yes: true, force: true })).rejects.toThrow(
@@ -350,16 +365,14 @@ describe("init + uninstall: manifest accuracy + homedir guard", () => {
     // Set up a valid trellis project, then pretend its cwd is the homedir.
     await init({ yes: true, claude: true, force: true });
 
-    const exitSpy = vi
-      .spyOn(process, "exit")
-      .mockImplementation(((code?: number) => {
-        throw new Error(`process.exit(${code ?? 0})`);
-      }) as never);
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((
+      code?: number,
+    ) => {
+      throw new Error(`process.exit(${code ?? 0})`);
+    }) as never);
 
     await withFakeHome(tmpDir, async () => {
-      await expect(uninstall({ yes: true })).rejects.toThrow(
-        "process.exit(1)",
-      );
+      await expect(uninstall({ yes: true })).rejects.toThrow("process.exit(1)");
     });
     expect(exitSpy).toHaveBeenCalledWith(1);
 

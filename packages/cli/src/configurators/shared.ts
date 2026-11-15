@@ -77,6 +77,12 @@ export function getPythonCommandForPlatform(
  */
 export function replacePythonCommandLiterals(content: string): string {
   if (content.includes("# {{EXTERNAL_STORE_BOOTSTRAP}}")) {
+    // The inlined definitions replace these template-only typing imports.
+    // Keeping both declares distinct ExternalStore return types to Pyright.
+    content = content.replace(
+      /from typing import TYPE_CHECKING\r?\n\r?\nif TYPE_CHECKING:\r?\n {4}from common\.external_store import [^\r\n]+\r?\n\r?\n/,
+      "",
+    );
     content = content.replace(
       "# {{EXTERNAL_STORE_BOOTSTRAP}}",
       getExternalStoreBootstrap("py"),

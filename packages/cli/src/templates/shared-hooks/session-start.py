@@ -860,6 +860,8 @@ def main():
     )
     allowed_pkgs = _resolve_spec_scope(is_mono, packages, scope_config, task_pkg, default_pkg)
 
+    from common.session_context import get_trellis_instructions  # type: ignore[import-not-found]
+
     output = StringIO()
 
     spec_index_paths = _collect_spec_index_paths(trellis_dir, allowed_pkgs)
@@ -879,6 +881,8 @@ Trellis compact SessionStart context. Use it to orient the session; load details
     if legacy_warning:
         output.write(f"<migration-warning>\n{legacy_warning}\n</migration-warning>\n\n")
 
+    output.write(get_trellis_instructions(code_root))
+    output.write("\n\n")
     output.write("<current-state>\n")
     output.write(
         _build_compact_current_state(code_root, trellis_dir, hook_input, spec_index_paths)

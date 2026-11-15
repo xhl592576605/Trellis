@@ -385,12 +385,25 @@ export function buildSessionContext(ctx, platformInput = null) {
   const allowedPkgs = resolveSpecScope(config)
   const paths = collectSpecIndexPaths(directory, allowedPkgs)
 
+  const root = workflowDirOf(directory)
+  const instructions = `<trellis-instructions>\n# Trellis Instructions\n\n` +
+    `Read .treills.conf.json in the current checkout to resolve storage/project. ` +
+    `Keep command cwd in this checkout; the .trellis browse link is optional.\n\n` +
+    `- \`${join(root, "workflow.md")}\` — development phases and skill routing.\n` +
+    `- \`${join(root, "spec")}\` — coding guidelines; read before implementation.\n` +
+    `- \`${join(root, "workspace")}\` — developer journals and session traces.\n` +
+    `- \`${join(root, "tasks")}\` — task requirements, design, plans and research.\n\n` +
+    `Prefer the platform's Trellis commands/skills when available ` +
+    `(for example trellis-continue and trellis-finish-work). ` +
+    `Project helpers may live under .agents/skills/ and platform agent directories.\n` +
+    `</trellis-instructions>`
   const parts = []
 
   parts.push(`<session-context>
 Trellis compact SessionStart context. Use it to orient the session; load details on demand.
 </session-context>`)
   parts.push(FIRST_REPLY_NOTICE)
+  parts.push(instructions)
 
   const legacyWarning = checkLegacySpec(directory, config)
   if (legacyWarning) {

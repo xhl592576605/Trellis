@@ -104,7 +104,18 @@ describe.skipIf(isWindows)("init --storage (external storage mode)", () => {
 
     // Platform wiring stays in the checkout.
     expect(fs.existsSync(path.join(tmpDir, ".claude"))).toBe(true);
-    expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, "AGENTS.md"))).toBe(false);
+    expect(loadHashes(tmpDir)).not.toHaveProperty("AGENTS.md");
+  });
+
+  it("preserves user root instructions even under force", async () => {
+    const content = "# Team rules\r\n\r\npython3 .trellis/user.py  \r\n";
+    fs.writeFileSync(path.join(tmpDir, "AGENTS.md"), content);
+    await init({ storage: storageDir, pi: true, yes: true, force: true });
+    expect(fs.readFileSync(path.join(tmpDir, "AGENTS.md"), "utf8")).toBe(
+      content,
+    );
+    expect(loadHashes(tmpDir)).not.toHaveProperty("AGENTS.md");
   });
 
   it("renders bootstrap document targets and commands without requiring a browse link", async () => {
@@ -288,6 +299,7 @@ describe.skipIf(isWindows)("init --storage (external storage mode)", () => {
     const output = vi.mocked(console.log).mock.calls.flat().join("\n");
     expect(output).toContain("Trellis Update");
     expect(output).toContain("Project version:");
+    expect(output).toContain("Already up to date!");
     expect(output).not.toContain("Trellis not initialized");
     expect(fs.existsSync(path.join(tmpDir, ".trellis"))).toBe(false);
   });
@@ -307,6 +319,14 @@ describe.skipIf(isWindows)("init --storage (external storage mode)", () => {
       expect(hook.status, rel + hook.stderr).toBe(0);
       expect(hook.stdout, rel).toContain("protocol-task");
       expect(hook.stdout, rel).not.toContain("./.trellis/scripts/");
+      if (!rel.endsWith("inject-workflow-state.py")) {
+        const payload = JSON.parse(hook.stdout) as { additionalContext?: string; hookSpecificOutput?: { additionalContext: string } };
+        const context = payload.hookSpecificOutput?.additionalContext ?? payload.additionalContext ?? "";
+        expect(context.match(/<trellis-instructions>/g), rel).toHaveLength(1);
+        for (const entry of ["workflow.md", "spec", "workspace", "tasks"]) {
+          expect(context, rel).toContain(path.join(fs.realpathSync(project), entry));
+        }
+      }
     }
     const snow = JSON.parse(fs.readFileSync(path.join(tmpDir, ".snow/commands/trellis-continue.json"), "utf8"));
     expect(snow.command).not.toContain("./.trellis/scripts/");

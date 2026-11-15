@@ -55,7 +55,6 @@ import {
   gitignoreTemplate,
   workflowMdTemplate,
 } from "../templates/trellis/index.js";
-import { agentsMdContent } from "../templates/markdown/index.js";
 import {
   COPILOT_INSTRUCTIONS_BLOCK_END,
   COPILOT_INSTRUCTIONS_BLOCK_START,
@@ -84,6 +83,7 @@ import {
 import { loadSpecRegistryConfig } from "../utils/registry-config.js";
 import {
   cleanupEmptyDirs,
+  removeTrellisManagedBlocks,
   TRELLIS_BLOCK_END,
   TRELLIS_BLOCK_START,
 } from "../utils/managed-paths.js";
@@ -272,14 +272,28 @@ function buildManagedBlockTemplate(
   );
 }
 
-function buildAgentsMdTemplate(cwd: string): string {
-  return buildManagedBlockTemplate(
-    cwd,
-    FILE_NAMES.AGENTS,
-    agentsMdContent,
-    TRELLIS_BLOCK_START,
-    TRELLIS_BLOCK_END,
-  );
+function collectLegacyAgentsCleanup(
+  cwd: string,
+  files: Map<string, string>,
+): void {
+  const fullPath = path.join(cwd, FILE_NAMES.AGENTS);
+  if (!fs.existsSync(fullPath)) return;
+  const stat = fs.lstatSync(fullPath);
+  if (!stat.isFile() || stat.isSymbolicLink()) return;
+  const content = fs.readFileSync(fullPath, "utf-8");
+  const cleaned = removeTrellisManagedBlocks(content);
+  if (cleaned !== null) {
+    files.set(FILE_NAMES.AGENTS, cleaned);
+  } else if (
+    content.includes(TRELLIS_BLOCK_START) ||
+    content.includes(TRELLIS_BLOCK_END)
+  ) {
+    console.log(
+      chalk.yellow(
+        "  AGENTS.md: ambiguous Trellis markers; preserving the file.",
+      ),
+    );
+  }
 }
 
 function buildCopilotInstructionsTemplate(cwd: string): string {
@@ -943,7 +957,7 @@ async function collectTemplateFiles(
   files.set(`${DIR_NAMES.WORKFLOW}/workflow.md`, workflowMdTemplate);
   // workspace/index.md stays excluded — it's runtime-appended by add_session.py
   // (journal index) and has no script-parsed structure.
-  files.set(FILE_NAMES.AGENTS, buildAgentsMdTemplate(cwd));
+  collectLegacyAgentsCleanup(cwd, files);
 
   // Platform-specific templates (only for configured platforms)
   for (const platformId of platforms) {
@@ -988,6 +1002,8 @@ async function collectTemplateFiles(
   // Apply python3→python replacement for Windows consistency with init-time writes
   const externalRoot = isExternalMode(cwd) ? resolveWorkflowDir(cwd) : null;
   for (const [filePath, content] of files) {
+    // Legacy cleanup must preserve all bytes outside the managed blocks.
+    if (filePath === FILE_NAMES.AGENTS) continue;
     const rendered = replacePythonCommandLiterals(content);
     files.set(
       filePath,
@@ -2742,7 +2758,7 @@ async function updateTemplates(options: UpdateOptions): Promise<void> {
     for (const file of changes.newFiles) {
       const dir = path.dirname(file.path);
       fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(file.path, file.newContent);
+      writeFileAtomic(file.path, file.newContent);
 
       // Make scripts executable
       if (
@@ -2761,7 +2777,7 @@ async function updateTemplates(options: UpdateOptions): Promise<void> {
   if (changes.autoUpdateFiles.length > 0) {
     console.log(chalk.blue("\nAuto-updating template files..."));
     for (const file of changes.autoUpdateFiles) {
-      fs.writeFileSync(file.path, file.newContent);
+      writeFileAtomic(file.path, file.newContent);
 
       // Make scripts executable
       if (
@@ -2786,7 +2802,7 @@ async function updateTemplates(options: UpdateOptions): Promise<void> {
       const action = await promptConflictResolution(file, options, applyToAll);
 
       if (action === "overwrite") {
-        fs.writeFileSync(file.path, file.newContent);
+        writeFileAtomic(file.path, file.newContent);
         if (
           file.relativePath.endsWith(".sh") ||
           file.relativePath.endsWith(".py")
@@ -2847,6 +2863,10 @@ async function updateTemplates(options: UpdateOptions): Promise<void> {
         filesToHash.set(file.relativePath, file.newContent);
       }
     }
+  }
+  // A successful cleanup retires ownership instead of tracking user prose.
+  if (filesToHash.delete(FILE_NAMES.AGENTS)) {
+    removeHash(cwd, FILE_NAMES.AGENTS);
   }
   if (filesToHash.size > 0) {
     updateHashes(cwd, filesToHash);

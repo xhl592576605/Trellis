@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { DIR_NAMES } from "../constants/paths.js";
+import { renderWorkflowPaths } from "../utils/external-store.js";
 import { copyTrellisDir } from "../templates/extract.js";
 
 // Import trellis templates (generic, not project-specific)
@@ -161,8 +162,17 @@ export async function createWorkflowStructure(
     executable: true,
   });
 
+  // Match update rendering, including the canonical external root on macOS.
+  const externalRoot = options?.trellisRoot ? fs.realpathSync(wfRoot) : null;
+  const renderMarkdown = (content: string): string => {
+    const rendered = replacePythonCommandLiterals(content);
+    return externalRoot
+      ? renderWorkflowPaths(rendered, externalRoot)
+      : rendered;
+  };
+
   // Copy workflow.md (native bundled template or selected marketplace variant)
-  await writeFile(wf("workflow.md"), replacePythonCommandLiterals(workflowMd));
+  await writeFile(wf("workflow.md"), renderMarkdown(workflowMd));
 
   // Copy .gitignore from templates
   await writeFile(wf(".gitignore"), gitignoreTemplate);
@@ -188,7 +198,10 @@ export async function createWorkflowStructure(
   // --template`.
   ensureDir(wf("agents"));
   for (const [agentFile, content] of getAllAgents()) {
-    await writeFile(wf(path.join("agents", agentFile)), content);
+    await writeFile(
+      wf(path.join("agents", agentFile)),
+      renderMarkdown(content),
+    );
   }
 
   // Create workspace/ with index.md (flat in external single-user mode —

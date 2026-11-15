@@ -577,6 +577,25 @@ def output_json(repo_root: Path | None = None) -> None:
 # Text Output
 # =============================================================================
 
+def get_trellis_instructions(repo_root: Path) -> str:
+    """Build project navigation at runtime, independent of the browse link."""
+    root = workflow_dir(repo_root)
+    return (
+        "<trellis-instructions>\n"
+        "# Trellis Instructions\n\n"
+        "Read .treills.conf.json in the current checkout to resolve storage/project. "
+        "Keep command cwd in this checkout; the .trellis browse link is optional.\n\n"
+        f"- `{root / 'workflow.md'}` — development phases and skill routing.\n"
+        f"- `{root / 'spec'}` — coding guidelines; read before implementation.\n"
+        f"- `{root / 'workspace'}` — developer journals and session traces.\n"
+        f"- `{root / 'tasks'}` — task requirements, design, plans and research.\n\n"
+        "Prefer the platform's Trellis commands/skills when available "
+        "(for example trellis-continue and trellis-finish-work). "
+        "Project helpers may live under .agents/skills/ and platform agent directories.\n"
+        "</trellis-instructions>"
+    )
+
+
 def get_context_text(repo_root: Path | None = None) -> str:
     """Get context as formatted text.
 
@@ -589,7 +608,7 @@ def get_context_text(repo_root: Path | None = None) -> str:
     if repo_root is None:
         repo_root = get_repo_root()
 
-    lines = []
+    lines = [get_trellis_instructions(repo_root), ""]
     lines.append("========================================")
     lines.append("SESSION CONTEXT")
     lines.append("========================================")

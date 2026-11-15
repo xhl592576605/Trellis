@@ -80,7 +80,7 @@ function buildKnownKeys(configuredPlatforms: readonly AITool[]): Set<string> {
 
 /**
  * Root-level AGENTS.md needs special handling because it has no platform
- * registry owner. New fixed inits record it only when written, but old
+ * registry owner. New inits no longer write or track it, but old
  * manifests may contain a user-owned AGENTS.md that init skipped. The
  * managed block markers are the least destructive ownership signal: no
  * markers means preserve the user's file by pruning the stale manifest key.
@@ -88,9 +88,11 @@ function buildKnownKeys(configuredPlatforms: readonly AITool[]): Set<string> {
 function shouldKeepAgentsMd(cwd: string): boolean {
   const fullPath = path.join(cwd, FILE_NAMES.AGENTS);
   if (!fs.existsSync(fullPath)) {
-    return true;
+    return false;
   }
   try {
+    const stat = fs.lstatSync(fullPath);
+    if (!stat.isFile() || stat.isSymbolicLink()) return false;
     const content = fs.readFileSync(fullPath, "utf-8");
     return (
       content.includes(TRELLIS_BLOCK_START) &&

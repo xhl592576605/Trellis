@@ -142,7 +142,7 @@ function stampLegacy(fx: Fixture, opts: { secondDev?: boolean } = {}): void {
             path.join(fx.trellis, "scripts", "task.py"),
           ),
           "AGENTS.md": hashOf(
-            path.join(TEMPLATE_DIR, "..", "markdown", "agents.md"),
+            path.resolve(__dirname, "../fixtures/legacy-agents.md"),
           ),
         },
       },
@@ -321,7 +321,7 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
         JSON.parse(fs.readFileSync(checkoutHashes, "utf-8")).hashes[
           "AGENTS.md"
         ],
-      ).toBeTruthy();
+      ).toBeUndefined();
 
       // The storage repository committed the import.
       const subjects = git(fx.storage, "log", "--pretty=%s").split("\n");
@@ -374,21 +374,16 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       vi.stubEnv("GIT_CONFIG_VALUE_0", excludes);
 
       fs.writeFileSync(path.join(fx.trellis, ".DS_Store"), "junk");
-      fs.writeFileSync(
-        path.join(fx.trellis, "spec", ".DS_Store"),
-        "junk",
-      );
+      fs.writeFileSync(path.join(fx.trellis, "spec", ".DS_Store"), "junk");
       fs.writeFileSync(path.join(fx.trellis, "tasks", "Thumbs.db"), "junk");
 
       await runUpdate({ migrateStorage: true, storage: fx.storage, yes: true });
 
       // Junk never reaches the storage repository …
-      expect(fs.existsSync(path.join(fx.projectDir, ".DS_Store"))).toBe(
+      expect(fs.existsSync(path.join(fx.projectDir, ".DS_Store"))).toBe(false);
+      expect(fs.existsSync(path.join(fx.projectDir, "spec", ".DS_Store"))).toBe(
         false,
       );
-      expect(
-        fs.existsSync(path.join(fx.projectDir, "spec", ".DS_Store")),
-      ).toBe(false);
       expect(
         fs.existsSync(path.join(fx.projectDir, "tasks", "Thumbs.db")),
       ).toBe(false);

@@ -114,18 +114,6 @@ function writeHashesV2(hashFile: string, hashes: Record<string, string>): void {
   fs.writeFileSync(hashFile, JSON.stringify({ __version: 2, hashes }, null, 2));
 }
 
-function removeSubagentsSection(content: string): string {
-  return content.replace(
-    "\n## Subagents\n\n" +
-      "- ALWAYS wait for all subagents to complete before yielding.\n" +
-      "- Spawn subagents automatically when:\n" +
-      "  - Parallelizable work (e.g., install + verify, npm test + typecheck, multiple tasks from plan)\n" +
-      "  - Long-running or blocking tasks where a worker can run independently.\n" +
-      "  - Isolation for risky changes or checks\n",
-    "",
-  );
-}
-
 describe("update() integration", () => {
   let tmpDir: string;
 
@@ -554,99 +542,110 @@ describe("update() integration", () => {
     expect(fs.readFileSync(targetFull, "utf-8")).toBe(templateContent);
   });
 
-  it("#4b auto-updates legacy untracked AGENTS.md and preserves outside content", async () => {
+  it("#4b removes legacy blocks exactly and retires the receipt", async () => {
     await setupProject();
-
-    const targetRelative = FILE_NAMES.AGENTS;
-    const targetFull = path.join(tmpDir, targetRelative);
-    const templateContent = fs.readFileSync(targetFull, "utf-8");
-    const oldContent = removeSubagentsSection(templateContent);
-    const existingContent = `# Local instructions\n\n${oldContent}\n\n## Project Notes\n\nKeep this.`;
-    const expectedContent = `# Local instructions\n\n${templateContent}\n\n## Project Notes\n\nKeep this.`;
-
-    fs.writeFileSync(targetFull, existingContent);
-    const codemapPath = path.join(tmpDir, "CODEMAP.md");
-    const codemap = "# Project map\n\npackages/ owns application code.\n";
-    fs.writeFileSync(codemapPath, codemap);
-
-    const hashFile = path.join(
-      tmpDir,
-      DIR_NAMES.WORKFLOW,
-      ".template-hashes.json",
-    );
-    const hashes = removeHashEntry(
-      readHashesV2(hashFile),
-      targetRelative,
-    ) as Record<string, string>;
-    writeHashesV2(hashFile, hashes);
+    const before =
+      "# Local instructions\r\n\r\n\r\npython3 .trellis/custom.py  \r\n";
+    const after = "\r\n\r\n## Project Notes\r\n\r\nKeep this.  ";
+    const old =
+      "<!-- TRELLIS:START -->\n# Old instructions\n<!-- TRELLIS:END -->";
+    const content = before + old + after;
+    writeProjectFile(FILE_NAMES.AGENTS, content);
+    const hashes = readHashesV2(hashFilePath());
+    hashes[FILE_NAMES.AGENTS] = computeHash(content);
+    writeHashesV2(hashFilePath(), hashes);
 
     await update({});
-
-    expect(fs.readFileSync(targetFull, "utf-8")).toBe(expectedContent);
-    expect(readHashesV2(hashFile)[targetRelative]).toBe(
-      computeHash(expectedContent),
-    );
-    expect(fs.readFileSync(codemapPath, "utf-8")).toBe(codemap);
+    expect(readProjectFile(FILE_NAMES.AGENTS)).toBe(before + after);
+    expect(readHashesV2(hashFilePath())).not.toHaveProperty(FILE_NAMES.AGENTS);
     await update({});
-    expect(fs.readFileSync(targetFull, "utf-8")).toBe(expectedContent);
-    expect(fs.readFileSync(codemapPath, "utf-8")).toBe(codemap);
+    expect(readProjectFile(FILE_NAMES.AGENTS)).toBe(before + after);
+    expect(readHashesV2(hashFilePath())).not.toHaveProperty(FILE_NAMES.AGENTS);
   });
 
-  it("#4c preserves user-modified untracked AGENTS.md managed block", async () => {
+  it.each(["skipAll", "createNew"] as const)(
+    "#4c preserves modified legacy blocks with %s and can retry",
+    async (policy) => {
+      await setupProject();
+      const content =
+        "User prefix\n<!-- TRELLIS:START -->custom<!-- TRELLIS:END -->\nTail";
+      writeProjectFile(FILE_NAMES.AGENTS, content);
+      const hashes = readHashesV2(hashFilePath());
+      hashes[FILE_NAMES.AGENTS] = computeHash("old baseline");
+      writeHashesV2(hashFilePath(), hashes);
+      await update({ [policy]: true });
+      expect(readProjectFile(FILE_NAMES.AGENTS)).toBe(content);
+      expect(readHashesV2(hashFilePath())[FILE_NAMES.AGENTS]).toBe(
+        computeHash("old baseline"),
+      );
+      if (policy === "createNew") {
+        expect(readProjectFile("AGENTS.md.new")).toBe("User prefix\n\nTail");
+      }
+      await update({ force: true });
+      expect(readProjectFile(FILE_NAMES.AGENTS)).toBe("User prefix\n\nTail");
+      expect(readHashesV2(hashFilePath())).not.toHaveProperty(
+        FILE_NAMES.AGENTS,
+      );
+    },
+  );
+
+  it("#4d never creates or appends root instructions", async () => {
     await setupProject();
-
-    const targetRelative = FILE_NAMES.AGENTS;
-    const targetFull = path.join(tmpDir, targetRelative);
-    const templateContent = fs.readFileSync(targetFull, "utf-8");
-    const modifiedOldContent = removeSubagentsSection(templateContent).replace(
-      "# Trellis Instructions",
-      "# Custom Trellis Instructions",
-    );
-    fs.writeFileSync(targetFull, modifiedOldContent);
-
-    const hashFile = path.join(
-      tmpDir,
-      DIR_NAMES.WORKFLOW,
-      ".template-hashes.json",
-    );
-    const hashes = removeHashEntry(
-      readHashesV2(hashFile),
-      targetRelative,
-    ) as Record<string, string>;
-    writeHashesV2(hashFile, hashes);
-
-    await update({ skipAll: true });
-
-    expect(fs.readFileSync(targetFull, "utf-8")).toBe(modifiedOldContent);
-  });
-
-  it("#4d preserves user AGENTS.md without TRELLIS markers by appending the managed block", async () => {
-    await setupProject();
-
-    const targetRelative = FILE_NAMES.AGENTS;
-    const targetFull = path.join(tmpDir, targetRelative);
-    const templateContent = fs.readFileSync(targetFull, "utf-8");
-
-    // User has a hand-written AGENTS.md with no TRELLIS:START/END markers at
-    // all (predates 0.5.0-beta.18 or was authored by hand). Pre-fix behavior
-    // would clobber this content; post-fix should append the managed block.
-    const userContent = "# Project notes\n\nThings the team agreed on.\n";
-    fs.writeFileSync(targetFull, userContent);
-
+    expect(fs.existsSync(projectFile(FILE_NAMES.AGENTS))).toBe(false);
     await update({ force: true });
-
-    const result = fs.readFileSync(targetFull, "utf-8");
-    expect(result).toContain("# Project notes");
-    expect(result).toContain("Things the team agreed on.");
-    expect(result).toContain("<!-- TRELLIS:START -->");
-    expect(result).toContain("<!-- TRELLIS:END -->");
-    // Managed block should sit AFTER the user content, not replace it.
-    expect(result.indexOf("# Project notes")).toBeLessThan(
-      result.indexOf("<!-- TRELLIS:START -->"),
-    );
-    // Tail equals the canonical template (force-applied managed block).
-    expect(result.endsWith(templateContent.trimEnd() + "\n")).toBe(true);
+    expect(fs.existsSync(projectFile(FILE_NAMES.AGENTS))).toBe(false);
+    const content = "# Project notes\n\npython3 .trellis/keep.py\n\n\n";
+    writeProjectFile(FILE_NAMES.AGENTS, content);
+    await update({ force: true });
+    expect(readProjectFile(FILE_NAMES.AGENTS)).toBe(content);
+    expect(readHashesV2(hashFilePath())).not.toHaveProperty(FILE_NAMES.AGENTS);
   });
+
+  it("previews legacy cleanup without writes and respects update.skip", async () => {
+    await setupProject();
+    const content = "<!-- TRELLIS:START -->old<!-- TRELLIS:END -->";
+    writeProjectFile(FILE_NAMES.AGENTS, content);
+    const hashes = readHashesV2(hashFilePath());
+    hashes[FILE_NAMES.AGENTS] = computeHash(content);
+    writeHashesV2(hashFilePath(), hashes);
+    await update({ dryRun: true });
+    expect(readProjectFile(FILE_NAMES.AGENTS)).toBe(content);
+    expect(readHashesV2(hashFilePath())[FILE_NAMES.AGENTS]).toBe(
+      computeHash(content),
+    );
+    fs.appendFileSync(
+      projectFile(".trellis/config.yaml"),
+      '\nupdate:\n  skip:\n    - "AGENTS.md"\n',
+    );
+    await update({ force: true });
+    expect(readProjectFile(FILE_NAMES.AGENTS)).toBe(content);
+    expect(readHashesV2(hashFilePath())[FILE_NAMES.AGENTS]).toBe(
+      computeHash(content),
+    );
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "preserves malformed blocks and does not follow instruction symlinks",
+    async () => {
+      await setupProject();
+      const content = "<!-- TRELLIS:START -->unterminated";
+      writeProjectFile(FILE_NAMES.AGENTS, content);
+      await update({ force: true });
+      expect(readProjectFile(FILE_NAMES.AGENTS)).toBe(content);
+      fs.unlinkSync(projectFile(FILE_NAMES.AGENTS));
+      const target = projectFile("user-rules.md");
+      fs.writeFileSync(
+        target,
+        "<!-- TRELLIS:START -->mine<!-- TRELLIS:END -->",
+      );
+      fs.symlinkSync(target, projectFile(FILE_NAMES.AGENTS));
+      await update({ force: true });
+      expect(
+        fs.lstatSync(projectFile(FILE_NAMES.AGENTS)).isSymbolicLink(),
+      ).toBe(true);
+      expect(fs.readFileSync(target, "utf8")).toContain("mine");
+    },
+  );
 
   it("#4e appends Trellis Copilot guidance to existing repo instructions", async () => {
     await init({ yes: true, force: true, copilot: true });

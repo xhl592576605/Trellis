@@ -44,25 +44,3 @@ CI-only：先 core 后 CLI；发布前 gate 为 `check-manifest-continuity` + `c
 - 局部 `AGENTS.md` 仅在真实职责边界添加；默认继承本文件。
 
 提交代码前，检查当前 staged 的文件并保持 CODEMAP.md 同步：新增文件或目录要添加条目，已删除的条目要移除，职责变化的目录要更新描述。
-
-<!-- TRELLIS:START -->
-# Trellis Instructions
-
-These instructions are for AI assistants working in this project.
-
-This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
-
-- `/Users/xuhuale/.trellis-wiki/Trellis/workflow.md` — development phases, when to create tasks, skill routing
-- `/Users/xuhuale/.trellis-wiki/Trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `/Users/xuhuale/.trellis-wiki/Trellis/workspace/` — per-developer journals and session traces
-- `/Users/xuhuale/.trellis-wiki/Trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
-
-If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
-
-If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
-- `.agents/skills/` — reusable Trellis skills
-- `.codex/agents/` — optional custom subagents
-
-Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
-
-<!-- TRELLIS:END -->

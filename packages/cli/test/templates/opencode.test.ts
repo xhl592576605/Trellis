@@ -151,6 +151,12 @@ describe("opencode session-start history detection", () => {
 
     expect(context.startsWith("<session-context>")).toBe(true);
     expect(context).toContain("Trellis compact SessionStart context");
+    expect(context.match(/<trellis-instructions>/g)).toHaveLength(1);
+    for (const entry of ["workflow.md", "spec", "workspace", "tasks"]) {
+      expect(context).toContain(
+        join("/tmp/trellis-opencode-test/.trellis", entry),
+      );
+    }
     expect(context).toContain("<first-reply-notice>");
     expect(context).toContain("the user's current request");
     expect(context).toContain("the user message that triggered this reply");
@@ -499,8 +505,6 @@ describe("opencode bash session context", () => {
 // ---------------------------------------------------------------------------
 // Issue #264 — sub-agent context injection + transform skip
 // ---------------------------------------------------------------------------
-
-
 
 describe("opencode persisted synthetic context parts", () => {
   it("creates deterministic complete identities without changing ordinary parts", () => {

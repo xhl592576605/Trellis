@@ -325,8 +325,14 @@ def build_context(
     stdin_ctx: dict[str, Any],
 ) -> str:
     compact = mode == "user"
+    scripts_dir = str(_workflow_dir(repo) / "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from common.session_context import get_trellis_instructions  # type: ignore[import-not-found]
 
     lines: list[str] = [
+        get_trellis_instructions(repo),
+        "",
         "# Trellis context (Snow CLI)",
         "",
         f"Mode: {mode}",

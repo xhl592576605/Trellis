@@ -49,6 +49,11 @@ interface HookResult {
 function writeFixtureRepo(root: string): void {
   const taskDir = path.join(root, ".trellis", "tasks", "demo-task");
   fs.mkdirSync(path.join(root, ".trellis", "scripts"), { recursive: true });
+  fs.cpSync(
+    path.resolve(path.dirname(HOOK_SCRIPT), "../../trellis/scripts/common"),
+    path.join(root, ".trellis/scripts/common"),
+    { recursive: true },
+  );
   fs.mkdirSync(taskDir, { recursive: true });
   fs.mkdirSync(path.join(root, ".trellis", ".runtime", "sessions"), {
     recursive: true,

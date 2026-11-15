@@ -79,6 +79,16 @@ describe("python3 rewrite reaches the previously-raw write sites", () => {
     setWriteMode("ask");
   });
 
+  it("inlines the external store without redeclaring template-only types", () => {
+    const hook =
+      collectPlatformTemplates("claude-code")?.get(
+        ".claude/hooks/session-start.py",
+      ) ?? "";
+    expect(hook).toContain("def load_store(");
+    expect(hook).toContain("class ExternalStore:");
+    expect(hook).not.toContain("from common.external_store import load_store");
+  });
+
   it("leaves the literal alone under the default (POSIX) rendering", async () => {
     // Guards the test itself: proves the injected literal really reaches disk,
     // so the Windows case below is measuring the rewrite and not a dead mock.

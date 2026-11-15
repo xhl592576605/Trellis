@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { DIR_NAMES, FILE_NAMES } from "../constants/paths.js";
+import { DIR_NAMES } from "../constants/paths.js";
 import type { TemplateHashes } from "../types/migration.js";
 import { writeFileAtomic } from "./atomic-write.js";
 import {
@@ -449,24 +449,6 @@ export function initializeHashes(
       hashes[relativePath] = computeHash(content);
     } catch {
       // Skip files that can't be read (binary, etc.)
-    }
-  }
-
-  // Backwards-compat path: when `trackedPaths` is not supplied (callers that
-  // haven't been updated yet), keep tracking root-level files that exist on
-  // disk. This preserves the legacy behavior for tests / scripts that don't
-  // go through the new recording flow.
-  if (!trackedPaths) {
-    for (const relativePath of [FILE_NAMES.AGENTS]) {
-      if (shouldExcludeFromHash(relativePath)) continue;
-      const fullPath = resolveManagedPath(cwd, relativePath);
-      if (!fs.existsSync(fullPath)) continue;
-      try {
-        const content = fs.readFileSync(fullPath, "utf-8");
-        hashes[toPosix(relativePath)] = computeHash(content);
-      } catch {
-        // Skip
-      }
     }
   }
 

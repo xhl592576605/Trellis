@@ -34,12 +34,10 @@ import {
   writeRootConfig,
 } from "../utils/external-store.js";
 import { VERSION } from "../constants/version.js";
-import { agentsMdContent } from "../templates/markdown/index.js";
 import {
   setWriteMode,
   startRecordingWrites,
   stopRecordingWrites,
-  writeFile,
   type WriteMode,
 } from "../utils/file-writer.js";
 import { emptyTaskJson, type TaskJson } from "../utils/task-json.js";
@@ -2045,7 +2043,7 @@ export async function init(options: InitOptions): Promise<void> {
   // Create Workflow Structure
   // ==========================================================================
 
-  // Record every successful write from here through createRootFiles. The
+  // Record every successful template write from here. The
   // captured set is the source of truth for `.template-hashes.json`'s
   // platform/root entries — replacing the previous "walk every managed dir"
   // approach that swept user-owned runtime files into the manifest
@@ -2106,9 +2104,6 @@ export async function init(options: InitOptions): Promise<void> {
     if (hasSelectedPythonPlatform) {
       logPythonAdaptationNotice(pythonCmd);
     }
-
-    // Create root files (skip if exists)
-    await createRootFiles(cwd);
   } finally {
     stopRecordingWrites();
   }
@@ -2262,19 +2257,4 @@ function askInput(prompt: string): Promise<string> {
       resolve(answer.trim());
     });
   });
-}
-
-async function createRootFiles(cwd: string): Promise<void> {
-  const agentsPath = path.join(cwd, FILE_NAMES.AGENTS);
-
-  // Write AGENTS.md from template
-  const agentsWritten = await writeFile(
-    agentsPath,
-    isExternalMode(cwd)
-      ? renderWorkflowPaths(agentsMdContent, resolveWorkflowDir(cwd))
-      : agentsMdContent,
-  );
-  if (agentsWritten) {
-    console.log(chalk.blue("📄 Created AGENTS.md"));
-  }
 }

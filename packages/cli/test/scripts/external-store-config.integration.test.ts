@@ -395,6 +395,12 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       );
       expect(hook.status).toBe(0);
       expect(hook.stdout).toContain("SessionStart context");
+      const payload = JSON.parse(hook.stdout) as { hookSpecificOutput: { additionalContext: string } };
+      const text = payload.hookSpecificOutput.additionalContext;
+      expect(text.match(/<trellis-instructions>/g)).toHaveLength(1);
+      for (const entry of ["workflow.md", "spec", "workspace", "tasks"]) {
+        expect(text).toContain(path.join(fs.realpathSync(projectDir), entry));
+      }
       expect(hook.stdout).toContain(TASK);
     });
 
@@ -419,6 +425,8 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       expect(r.status).toBe(0);
       expect(r.stdout).toContain(path.join(fs.realpathSync(projectDir), "workspace", "journal-1.md"));
       expect(r.stdout).not.toContain("init_developer");
+      expect(r.stdout).toContain("<trellis-instructions>");
+      expect(r.stdout).toContain(path.join(fs.realpathSync(projectDir), "workflow.md"));
     });
   },
 );
