@@ -9592,15 +9592,22 @@ describe("regression: .trellis/scripts stays byte-identical to templates/trellis
   // build failure.
   const __dirnameParity = path.dirname(fileURLToPath(import.meta.url));
   const parityRepoRoot = path.resolve(__dirnameParity, "../../..");
-  const dogfoodScriptsRoot = path.join(
-    resolveWorkflowDir(parityRepoRoot),
-    "scripts",
-  );
+  let dogfoodScriptsRoot = "";
+  try {
+    dogfoodScriptsRoot = path.join(resolveWorkflowDir(parityRepoRoot), "scripts");
+  } catch (error) {
+    // The checked-in locator can point at a maintainer-only store that does
+    // not exist on a CI runner. Malformed configs and binding errors must
+    // still fail rather than silently disable the parity check.
+    if (!(error instanceof Error) || !error.message.includes("ENOENT")) {
+      throw error;
+    }
+  }
   // A fresh checkout/CI has no private external wiki installation. Keep
   // parity strict when a dogfood copy exists; missing individual files must
   // still fail. Clean-checkout runtime behavior is covered by the external
   // storage/init integration suites.
-  const parityIt = fs.existsSync(dogfoodScriptsRoot) ? it : it.skip;
+  const parityIt = dogfoodScriptsRoot && fs.existsSync(dogfoodScriptsRoot) ? it : it.skip;
   const templateScriptsRoot = path.join(
     parityRepoRoot,
     "packages/cli/src/templates/trellis/scripts",
