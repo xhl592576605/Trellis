@@ -1319,7 +1319,9 @@ def _auto_commit_workspace(
         )
         return COMMIT_BLOCKED
 
-    commit_msg = get_session_commit_message(repo_root)
+    commit_msg = _apply_project_scope(
+        get_session_commit_message(repo_root), ctx.project_name
+    )
     # Resolve the current task so staging is scoped to its dir only. The ref
     # is ``.trellis/tasks/<name>`` (or under archive/) — pass the bare name.
     current = get_current_task(repo_root)
@@ -1341,16 +1343,9 @@ def _auto_commit_workspace(
 
     # Explicitly declared data files edited this session (spec/research
     # outside the task dir). Attribution comes from the caller's explicit
-    # list — never from scanning the project for dirty files.
-    for ref in include_paths or []:
-        logical = _resolve_include_ref(repo_root, ref)
-        if logical is None:
-            print(
-                f"Error: --include-path '{ref}' does not resolve to a file "
-                "inside this project's Trellis data directory.",
-                file=sys.stderr,
-            )
-            return COMMIT_FAILED
+    # list — never from scanning the project for dirty files. Refs were
+    # already resolved (and validated) before any disk write.
+    for logical in include_paths or []:
         if logical not in paths:
             paths.append(logical)
 
@@ -1417,6 +1412,33 @@ def _auto_commit_workspace(
         return COMMIT_FAILED
 
 
+_CONVENTIONAL_SCOPED = re.compile(r"^[A-Za-z]+\([^)]+\)!?: ")
+_CONVENTIONAL_PLAIN = re.compile(r"^([A-Za-z]+)(!?): ")
+
+
+def _apply_project_scope(message: str, project: str) -> str:
+    """Give a journal commit message a conventional ``(<project>)`` scope.
+
+    The shared storage repository hosts many projects, so the log must
+    name its owner. ``{project}`` substitutes directly; an already-scoped
+    message is kept as the user's explicit choice; an unscoped conventional
+    message gets the scope injected after its type; free-form text is
+    prefixed with a scoped ``chore``.
+    """
+    if "{project}" in message:
+        return message.replace("{project}", project)
+    if _CONVENTIONAL_SCOPED.match(message):
+        return message
+    match = _CONVENTIONAL_PLAIN.match(message)
+    if match:
+        # Scope sits between type and the optional "!": feat(p)!: ...
+        return (
+            f"{match.group(1)}({project}){match.group(2)}: "
+            f"{message[match.end():]}"
+        )
+    return f"chore({project}): {message}"
+
+
 def _resolve_include_ref(repo_root: Path, ref: str) -> str | None:
     """Validate one --include-path ref into a logical ``.trellis/...`` path.
 
@@ -1428,6 +1450,18 @@ def _resolve_include_ref(repo_root: Path, ref: str) -> str | None:
     normalized = ref.replace("\\", "/").strip()
     while normalized.startswith("./"):
         normalized = normalized[2:]
+    # Absolute refs are accepted when they point inside this project's
+    # data directory — that is the form platform docs receive from
+    # renderWorkflowPaths. Anything outside stays invalid.
+    if Path(normalized).is_absolute():
+        try:
+            boundary = workflow_dir(repo_root).resolve()
+            real = Path(normalized).resolve()
+        except (OSError, RuntimeError):
+            return None
+        if real != boundary and boundary not in real.parents:
+            return None
+        normalized = str(real.relative_to(boundary))
     if normalized == DIR_WORKFLOW:
         return None
     if normalized.startswith(f"{DIR_WORKFLOW}/"):
@@ -1455,6 +1489,30 @@ def _resolve_include_ref(repo_root: Path, ref: str) -> str | None:
         if rc != 0 or spec not in tracked.splitlines():
             return None
     return f"{DIR_WORKFLOW}/{normalized}"
+
+
+def _resolve_include_paths(
+    repo_root: Path, include_paths: list[str] | None
+) -> list[str] | None:
+    """Resolve every ``--include-path`` ref up front, before any disk write.
+
+    Returns the logical ``.trellis/...`` list ([] when no refs were given),
+    or None when any ref is invalid — argument errors must fail before the
+    journal is written, never in a half-recorded state.
+    """
+    logical: list[str] = []
+    for ref in include_paths or []:
+        resolved = _resolve_include_ref(repo_root, ref)
+        if resolved is None:
+            print(
+                f"Error: --include-path '{ref}' does not resolve to a file "
+                "inside this project's Trellis data directory.",
+                file=sys.stderr,
+            )
+            return None
+        if resolved not in logical:
+            logical.append(resolved)
+    return logical
 
 
 def _print_commit_checkpoint(session_num: int, journal_name: str) -> None:
@@ -1534,6 +1592,11 @@ def add_session(
     """Add a new session, resuming an interrupted one instead of duplicating it."""
     repo_root = get_repo_root()
     warn_if_parallel_worktree(repo_root)
+    # Validate --include-path refs before anything is written: an argument
+    # error must not leave a half-recorded session behind.
+    include_paths = _resolve_include_paths(repo_root, include_paths)
+    if include_paths is None:
+        return 1
     initial_workspace = _workspace_snapshot(get_workspace_dir(repo_root))
     ensure_developer(repo_root)
 
@@ -1911,7 +1974,9 @@ def main() -> int:
         default=[],
         help=(
             "Trellis data file edited this session to include in the journal "
-            "commit (repeatable), e.g. --include-path .trellis/spec/cli/guide.md. "
+            "commit (repeatable). Accepts spec/... , .trellis/spec/... , or "
+            "an absolute path inside the project's data directory, e.g. "
+            "--include-path .trellis/spec/cli/guide.md. "
             "Explicit declaration only — dirty files are never discovered by "
             "scanning."
         ),

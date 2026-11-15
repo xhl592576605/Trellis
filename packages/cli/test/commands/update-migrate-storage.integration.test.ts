@@ -328,6 +328,9 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       expect(
         subjects.some((s) => s.includes("migrate") || s.includes("import")),
       ).toBe(true);
+      expect(subjects).toContain(
+        `chore(${fx.projectName}): import external workflow data`,
+      );
 
       // The original tree is preserved at an explicit backup location.
       const entries = fs
@@ -359,6 +362,43 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
         { cwd: fx.tmp, encoding: "utf-8" },
       );
       expect(r.status, r.stderr).toBe(0);
+    });
+
+    it("skips OS junk files even when the user's global gitignore ignores them", async () => {
+      // Reproduces the macOS failure: a global excludesFile ignoring
+      // .DS_Store used to make the migration's `git add` fail outright.
+      const excludes = path.join(fx.base, "global-excludes");
+      fs.writeFileSync(excludes, ".DS_Store\nThumbs.db\n");
+      vi.stubEnv("GIT_CONFIG_COUNT", "1");
+      vi.stubEnv("GIT_CONFIG_KEY_0", "core.excludesFile");
+      vi.stubEnv("GIT_CONFIG_VALUE_0", excludes);
+
+      fs.writeFileSync(path.join(fx.trellis, ".DS_Store"), "junk");
+      fs.writeFileSync(
+        path.join(fx.trellis, "spec", ".DS_Store"),
+        "junk",
+      );
+      fs.writeFileSync(path.join(fx.trellis, "tasks", "Thumbs.db"), "junk");
+
+      await runUpdate({ migrateStorage: true, storage: fx.storage, yes: true });
+
+      // Junk never reaches the storage repository …
+      expect(fs.existsSync(path.join(fx.projectDir, ".DS_Store"))).toBe(
+        false,
+      );
+      expect(
+        fs.existsSync(path.join(fx.projectDir, "spec", ".DS_Store")),
+      ).toBe(false);
+      expect(
+        fs.existsSync(path.join(fx.projectDir, "tasks", "Thumbs.db")),
+      ).toBe(false);
+      expect(git(fx.storage, "ls-files")).not.toContain(".DS_Store");
+
+      // … and the import commit landed, scoped to the project.
+      const subjects = git(fx.storage, "log", "--pretty=%s").split("\n");
+      expect(subjects).toContain(
+        `chore(${fx.projectName}): import external workflow data`,
+      );
     });
 
     it("re-running on a migrated project is an idempotent no-op", async () => {

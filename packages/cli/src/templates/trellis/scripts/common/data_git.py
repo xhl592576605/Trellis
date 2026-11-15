@@ -50,6 +50,18 @@ class DataGitContext:
         """True when product data lives in the separate storage repository."""
         return self.git_root != self.code_root
 
+    @property
+    def project_name(self) -> str:
+        """Project identifier for storage-commit scopes.
+
+        External mode names the project directory inside the shared
+        storage repository; legacy mode falls back to the code repo's
+        directory name.
+        """
+        if self.is_external:
+            return self.prefix.rstrip("/") or self.code_root.name
+        return self.code_root.name
+
     def to_pathspec(self, logical: str) -> str:
         """Map a logical ``.trellis/...`` path to a git_root-relative pathspec.
 

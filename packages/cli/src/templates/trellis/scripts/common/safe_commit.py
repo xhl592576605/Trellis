@@ -301,7 +301,7 @@ def _print_index_lock_hint(ctx: DataGitContext, task_name: str) -> None:
     )
     print(
         f"[WARN] next add_session.py run (finish-work: --require-commit) retries "
-        f"the 'chore(task): archive {task_name}' commit; do NOT re-archive the task.",
+        f"the project-scoped 'archive task {task_name}' commit; do NOT re-archive the task.",
         file=sys.stderr,
     )
 
@@ -409,7 +409,9 @@ def commit_task_archive(
         if rc == 0:
             return ARCHIVE_COMMIT_SKIPPED, ""
 
-        commit_msg = f"chore(task): archive {task_name}"
+        commit_msg = (
+            f"chore({ctx.project_name}): archive task {task_name}"
+        )
         rc, _, err = run_git_retry_index_lock(
             ["commit", "-m", commit_msg, "--", *commit_specs], cwd=ctx.git_root
         )

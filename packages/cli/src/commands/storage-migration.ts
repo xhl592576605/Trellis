@@ -69,13 +69,35 @@ const SKIP_COPY_NAMES = new Set([
   "worktrees",
 ]);
 
+/** OS-generated metadata files (Finder/Explorer junk). Never migrated. */
+const JUNK_FILE_NAMES = new Set([".DS_Store", "Thumbs.db"]);
+
 function skippedByCopy(relSegments: string[]): boolean {
   const first = relSegments[0] ?? "";
   if (SKIP_COPY_NAMES.has(first)) return true;
   if (first.startsWith(".backup-")) return true;
   if (relSegments.includes("__pycache__")) return true;
+  if (relSegments.some((name) => JUNK_FILE_NAMES.has(name))) return true;
   const last = relSegments[relSegments.length - 1] ?? "";
   return last.endsWith(".pyc");
+}
+
+/** Count OS junk files anywhere under the legacy tree, for the report. */
+function countJunkFiles(source: string): number {
+  let count = 0;
+  const walk = (dir: string, segments: string[]): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (JUNK_FILE_NAMES.has(entry.name)) {
+        count += 1;
+        continue;
+      }
+      const rel = [...segments, entry.name];
+      if (skippedByCopy(rel)) continue;
+      if (entry.isDirectory()) walk(path.join(dir, entry.name), rel);
+    }
+  };
+  walk(source, []);
+  return count;
 }
 
 function readDeveloperName(trellisDir: string): string | null {
@@ -360,7 +382,9 @@ function productFiles(root: string): Record<string, string> {
           (name) =>
             [".runtime", ".git", ".cache", "worktrees", "__pycache__"].includes(
               name,
-            ) || name.startsWith(".backup-"),
+            ) ||
+            name.startsWith(".backup-") ||
+            JUNK_FILE_NAMES.has(name),
         ) ||
         entry.name.endsWith(".pyc")
       )
@@ -376,7 +400,11 @@ function productFiles(root: string): Record<string, string> {
   return files;
 }
 
-function commitStorageImport(storageRoot: string, paths: string[]): void {
+function commitStorageImport(
+  storageRoot: string,
+  projectName: string,
+  paths: string[],
+): void {
   if (paths.length === 0) return;
   const specs = paths.map((name) => ":(literal)" + name);
   try {
@@ -401,7 +429,7 @@ function commitStorageImport(storageRoot: string, paths: string[]): void {
       [
         "commit",
         "-m",
-        "chore(storage): import external workflow data",
+        `chore(${projectName}): import external workflow data`,
         "--",
         ...specs,
       ],
@@ -524,6 +552,14 @@ export async function runStorageMigration(
         const image = fs.mkdtempSync(path.join(runtime, "storage-import-"));
         copyData(trellisPath, image);
         verifyCopy(trellisPath, image);
+        const junk = countJunkFiles(trellisPath);
+        if (junk > 0) {
+          console.log(
+            chalk.gray(
+              `Skipped ${junk} OS junk file(s) (.DS_Store/Thumbs.db).`,
+            ),
+          );
+        }
         if (workspacePlan) convertWorkspace(image, workspacePlan);
         const version = path.join(trellisPath, ".version");
         if (fs.existsSync(version))
@@ -586,7 +622,7 @@ export async function runStorageMigration(
         // Complete validation before the first destination write.
         publishImage(image, store.projectDir, false);
         publishImage(image, store.projectDir, true);
-        commitStorageImport(store.storageRoot, [
+        commitStorageImport(store.storageRoot, projectName, [
           ...["project.json", ...Object.keys(productFiles(image))].map(
             (name) => projectName + "/" + name,
           ),
@@ -697,6 +733,7 @@ export async function runStorageMigration(
       }
       commitStorageImport(
         store.storageRoot,
+        projectName,
         Object.keys(state.refreshHashes ?? {}).map(
           (name) => projectName + "/" + name,
         ),

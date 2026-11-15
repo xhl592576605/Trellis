@@ -9532,7 +9532,7 @@ print(json.dumps({
 
     const log = gitLogLines();
     expect(log.length).toBe(2);
-    expect(log[0]).toContain(`chore(task): archive ${taskName}`);
+    expect(log[0]).toContain(`: archive task ${taskName}`);
 
     // The move is fully recorded — no phantom deletes left behind for the
     // source path.

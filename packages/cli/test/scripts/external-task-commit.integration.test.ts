@@ -406,7 +406,7 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       expect(state.dest).toContain("archive/");
 
       // The archive did not complete: no archive commit in storage.
-      expect(storageLog(fx)).not.toContain("chore(task): archive alpha");
+      expect(storageLog(fx)).not.toContain("chore(demo): archive task alpha");
 
       // Repair git, then the finish-work final step flushes the pending
       // archive commit AND the journal commit.
@@ -415,7 +415,7 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       expect(flush.status, flush.stderr).toBe(0);
 
       const log = storageLog(fx);
-      expect(log).toContain("chore(task): archive alpha");
+      expect(log).toContain("chore(demo): archive task alpha");
       expect(log.some((s) => s.includes("journal"))).toBe(true);
       expect(fs.existsSync(pending)).toBe(false);
       expect(
@@ -429,7 +429,7 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
         "--name-only",
         "--pretty=format:",
         "--grep",
-        "archive alpha",
+        "archive task alpha",
         "-1",
       )
         .split("\n")
@@ -474,7 +474,7 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       ).toBe(0);
       const result = addSession(fx, "final record", "--require-commit");
       expect(result.status, result.stderr).toBe(0);
-      expect(storageLog(fx)).toContain("chore(task): archive alpha");
+      expect(storageLog(fx)).toContain("chore(demo): archive task alpha");
       expect(
         git(fx.storage, "status", "--porcelain", "--", PROJECT + "/tasks"),
       ).toBe("");
@@ -502,7 +502,7 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
         },
       );
       expect(result.status, result.stderr).toBe(0);
-      expect(storageLog(fx)).not.toContain("chore(task): archive foreign");
+      expect(storageLog(fx)).not.toContain("chore(demo): archive task foreign");
       expect(
         fs.existsSync(
           path.join(fx.projectDir, ".runtime", "pending-task-commit.json"),
@@ -525,7 +525,7 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
         },
       );
       expect(recover.status, recover.stderr).toBe(0);
-      expect(storageLog(fx)).toContain("chore(task): archive foreign");
+      expect(storageLog(fx)).toContain("chore(demo): archive task foreign");
     });
 
     it("blocks unmarked manual edits in shared journals", () => {
@@ -685,8 +685,11 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       expect(addSession(fx, "directory", "--include-path", "spec").status).toBe(
         1,
       );
-      git(fx.storage, "add", PROJECT + "/workspace");
-      git(fx.storage, "commit", "-qm", "resolve journal");
+      // Fail-fast: the argument error leaves no half-recorded journal
+      // behind, so there is nothing on disk to resolve.
+      expect(
+        fs.existsSync(path.join(fx.projectDir, "workspace")),
+      ).toBe(false);
       fs.unlinkSync(file);
       const result = addSession(
         fx,
@@ -707,11 +710,13 @@ describe.skipIf(!hasPython() || process.platform === "win32")(
       git(fx.storage, "commit", "-q", "-m", "spec initial");
       fs.writeFileSync(specFile, "# Guide v2\n");
 
+      // Absolute paths inside the project data directory are the form
+      // platform docs receive after renderWorkflowPaths rewrites them.
       const r = addSession(
         fx,
         "spec session",
         "--include-path",
-        ".trellis/spec/cli/guide.md",
+        specFile,
       );
       expect(r.status, r.stderr).toBe(0);
 
