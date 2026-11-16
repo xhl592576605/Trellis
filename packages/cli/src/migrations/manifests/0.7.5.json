@@ -1,0 +1,9 @@
+{
+  "version": "0.7.5",
+  "description": "Auto-commit the external wiki content at the end of trellis init",
+  "breaking": false,
+  "recommendMigrate": false,
+  "changelog": "**Enhancements:**\n- External-storage `trellis init` now commits the wiki content it just wrote instead of leaving the storage repository at zero commits. A fresh wiki (including a brand-new storage repository) gets a single `chore(<project>): initialize Trellis wiki` commit covering the whole project directory plus newly created root ignore/attribute files, mirroring the storage-migration initialization commit. Re-init commits only the files this run rewrote as `chore(<project>): update wiki from trellis init`, so uncommitted user edits stay out. A commit failure (missing Git identity, failing hooks) degrades to a warning with the manual command instead of failing init, and the initialization commit retries on the next init run.",
+  "migrations": [],
+  "notes": "No data migration is required. Existing external wiki repositories are untouched until their next init run. `trellis update` and `--migrate-storage` commit behavior is unchanged, and non-external (legacy) init paths perform no new Git operations."
+}
