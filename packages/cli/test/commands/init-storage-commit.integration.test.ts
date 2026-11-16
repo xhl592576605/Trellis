@@ -25,11 +25,19 @@ vi.mock("inquirer", () => ({
 }));
 
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync("git", args, {
-    cwd,
-    encoding: "utf8",
-    stdio: "pipe",
-  }).trim();
+  return execFileSync(
+    "git",
+    // quotePath=false keeps non-ASCII paths (演示 project/…) readable in
+    // name-only output. Git's default quotes them as octal escapes, which
+    // differs between dev machines (quotePath=false in global config) and
+    // CI (no global config) and broke these assertions on the first try.
+    ["-c", "core.quotePath=false", ...args],
+    {
+      cwd,
+      encoding: "utf8",
+      stdio: "pipe",
+    },
+  ).trim();
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
