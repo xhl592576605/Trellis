@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -49,6 +49,7 @@ import {
   type DetectedPackage,
 } from "../utils/project-detector.js";
 import { initializeHashes, removeHash } from "../utils/template-hash.js";
+import { commitStorageFiles, productFiles } from "../utils/storage-update.js";
 import {
   NATIVE_WORKFLOW_ID,
   resolveWorkflowTemplate,
@@ -89,6 +90,93 @@ function recordExternalEntrypoints(cwd: string): void {
     entries.set(DIR_NAMES.WORKFLOW, fs.readlinkSync(browseLink));
   }
   updateHashes(cwd, entries);
+}
+
+/** True when no commit in the storage repository touches the project path. */
+function wikiHistoryEmpty(storageRoot: string, project: string): boolean {
+  try {
+    const history = execFileSync(
+      "git",
+      ["log", "-1", "--format=%H", "--", ":(literal)" + project],
+      { cwd: storageRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+    return history.trim().length === 0;
+  } catch {
+    // A repository without HEAD yet has no project history either.
+    return true;
+  }
+}
+
+/**
+ * Auto-commit wiki content after external init.
+ *
+ * Fresh wiki (no commit ever touched `<project>/`, including a brand-new
+ * storage repository) gets an initialization commit covering the whole
+ * project directory plus newly created root ignore/attribute files —
+ * mirroring the migration initialization commit. Re-init commits only
+ * files whose bytes changed during this run, so user edits init never
+ * touched stay out (same ownership rule as `trellis update`). A commit
+ * failure degrades to a warning: init's writes are already complete.
+ */
+function commitExternalWikiInit(
+  storageRoot: string,
+  project: string,
+  before: Record<string, string>,
+): void {
+  const after = productFiles(path.join(storageRoot, project));
+  const specs: string[] = [];
+  let message: string;
+  if (wikiHistoryEmpty(storageRoot, project)) {
+    for (const name of Object.keys(after)) specs.push(project + "/" + name);
+    // Root ignore/attribute files join only while absent from HEAD (fresh
+    // storage), matching the migration initialization-commit contract. HEAD —
+    // not the index — is the source of truth: a previously failed commit may
+    // have already staged these files.
+    for (const rootFile of [".gitignore", ".gitattributes"]) {
+      if (!fs.existsSync(path.join(storageRoot, rootFile))) continue;
+      try {
+        const inHead = execFileSync(
+          "git",
+          ["ls-tree", "--name-only", "HEAD", "--", ":(literal)" + rootFile],
+          {
+            cwd: storageRoot,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        );
+        if (!inHead.trim()) specs.push(rootFile);
+      } catch {
+        // No HEAD yet → the root file is absent from every commit.
+        specs.push(rootFile);
+      }
+    }
+    message = `chore(${project}): initialize Trellis wiki`;
+  } else {
+    for (const name of new Set([
+      ...Object.keys(before),
+      ...Object.keys(after),
+    ])) {
+      if (before[name] !== after[name]) specs.push(project + "/" + name);
+    }
+    message = `chore(${project}): update wiki from trellis init`;
+  }
+  if (specs.length === 0) return;
+  try {
+    if (commitStorageFiles(storageRoot, specs, message)) {
+      console.log(chalk.green(`✓ Wiki content committed: ${message}`));
+    }
+  } catch (error) {
+    console.warn(
+      chalk.yellow(
+        `⚠ Could not commit the external wiki: ${error instanceof Error ? error.message : String(error)}`,
+      ),
+    );
+    console.warn(
+      chalk.gray(
+        `  Fix your Git identity/hooks, then run: git -C "${storageRoot}" add -- "${project}" && git -C "${storageRoot}" commit`,
+      ),
+    );
+  }
 }
 
 const MIN_PYTHON_MAJOR = 3;
@@ -1191,8 +1279,11 @@ export async function init(options: InitOptions): Promise<void> {
 
   // Existing locators are authoritative, including when the browse link is absent.
   // Old physical layouts stay intact until the explicit migration step.
-  let externalStorage: { projectDir: string; storageRoot: string } | null =
-    null;
+  let externalStorage: {
+    project: string;
+    projectDir: string;
+    storageRoot: string;
+  } | null = null;
   const legacyPresent = fs.existsSync(path.join(cwd, DIR_NAMES.WORKFLOW));
   try {
     const existing = readExternalStore(cwd);
@@ -1247,6 +1338,13 @@ export async function init(options: InitOptions): Promise<void> {
       error instanceof Error ? error.message : String(error),
     );
     process.exit(1);
+  }
+
+  // Snapshot the wiki before any init write lands in the external project
+  // directory; the after-diff is what the end-of-init commit owns.
+  let wikiBefore: Record<string, string> = {};
+  if (externalStorage) {
+    wikiBefore = productFiles(externalStorage.projectDir);
   }
 
   const workflowRoot = resolveWorkflowDir(cwd);
@@ -1340,6 +1438,11 @@ export async function init(options: InitOptions): Promise<void> {
     if (reinitDone) {
       if (externalStorage) {
         recordExternalEntrypoints(cwd);
+        commitExternalWikiInit(
+          externalStorage.storageRoot,
+          externalStorage.project,
+          wikiBefore,
+        );
       }
       return;
     }
@@ -2182,6 +2285,11 @@ export async function init(options: InitOptions): Promise<void> {
         chalk.blue(`✓ Bootstrap task created (${BOOTSTRAP_TASK_NAME})`),
       );
     }
+    commitExternalWikiInit(
+      externalStorage.storageRoot,
+      externalStorage.project,
+      wikiBefore,
+    );
     return;
   }
 

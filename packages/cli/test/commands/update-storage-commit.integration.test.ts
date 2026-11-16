@@ -64,9 +64,9 @@ describe.skipIf(process.platform === "win32")(
           }),
       );
       await init({ storage, project: "演示 project", pi: true, yes: true });
+      // init now creates the wiki baseline commit itself (initialize-commit
+      // behavior); only neutralize the host's global excludes file here.
       git(storage, "config", "core.excludesFile", "/dev/null");
-      git(storage, "add", "--", ".");
-      git(storage, "commit", "-qm", "wiki baseline");
       fs.unlinkSync(path.join(code, ".trellis"));
     });
 

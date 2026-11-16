@@ -44,8 +44,8 @@ export function commitStorageFiles(
   storageRoot: string,
   paths: string[],
   message: string,
-): void {
-  if (paths.length === 0) return;
+): boolean {
+  if (paths.length === 0) return false;
   const specs = paths.map((name) => ":(literal)" + name);
   try {
     // A retry may already have staged deletions, which no longer exist in the
@@ -79,11 +79,12 @@ export function commitStorageFiles(
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
-    if (!changed.trim()) return;
+    if (!changed.trim()) return false;
     execFileSync("git", ["commit", "-m", message, "--", ...specs], {
       cwd: storageRoot,
       stdio: "pipe",
     });
+    return true;
   } catch (error) {
     throw new Error(
       "Storage commit failed; output and checkpoint preserved. Fix Git identity/hooks/locks and rerun update.",

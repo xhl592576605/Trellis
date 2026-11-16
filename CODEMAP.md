@@ -21,6 +21,7 @@ Trellis/
 │       ├── fixtures/legacy-agents.md # 旧版 AGENTS.md 兼容夹具，不再作为生产模板分发
 │       ├── utils/managed-paths.test.ts # 旧托管块精确清理与歧义标记保护
 │       ├── commands/update-storage-commit.integration.test.ts # 外部更新提交、隔离与失败恢复
+│       ├── commands/init-storage-commit.integration.test.ts # init 末尾外部 wiki 自动提交（首次整体/re-init 增量/失败降级）
 │       └── scripts/release-preflight.test.ts # npm 处理延迟与版本/tag 重试
 ├── packages/core/                 # trellis-wiki-core SDK
 │   ├── src/{channel,mem,task,testing}/   # 公开子路径领域（mem 不进根 barrel）

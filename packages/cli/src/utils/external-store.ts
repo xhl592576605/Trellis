@@ -74,7 +74,7 @@ export function prepareExternalStorage(
   storageRoot: string,
   project: string,
   codeRoot: string,
-): { projectDir: string; storageRoot: string } {
+): { project: string; projectDir: string; storageRoot: string } {
   validateProjectName(project);
   if (
     !storageRoot.trim() ||
@@ -160,7 +160,7 @@ export function prepareExternalStorage(
       "**/.runtime/\n**/__pycache__/\n**/*.pyc\n**/.backup-*/\n",
     );
   }
-  return { projectDir, storageRoot: realStorage };
+  return { project, projectDir, storageRoot: realStorage };
 }
 
 function findEnclosingGitRoot(start: string): string | null {
