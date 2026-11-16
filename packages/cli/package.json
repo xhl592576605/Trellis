@@ -1,6 +1,6 @@
 {
   "name": "trellis-wiki",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "trellis-wiki — AI coding workflow framework that persists specs, tasks, and memory in an external local wiki store (Trellis fork)",
   "type": "module",
   "main": "./dist/index.js",
